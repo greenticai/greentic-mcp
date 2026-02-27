@@ -150,8 +150,8 @@ models MCP message shapes and executes tools locally via WIT/wasm host calls.
 ### MCP adapter publishing
 
 - greentic-mcp builds and publishes the MCP adapter for `wasix:mcp@25.06.18` to GHCR:
-  - `ghcr.io/greentic-ai/greentic-mcp-adapter:25.06.18-v<adapter_version>`
-  - `ghcr.io/greentic-ai/greentic-mcp-adapter:25.06.18-stable` (moving pointer)
+  - `ghcr.io/greenticai/greentic-mcp-adapter:25.06.18-v<adapter_version>`
+  - `ghcr.io/greenticai/greentic-mcp-adapter:25.06.18-stable` (moving pointer)
 - The pushed artifact is `mcp_adapter_25_06_18.component.wasm`, implementing `greentic:component/node@0.5.0` and importing `wasix:mcp@25.06.18`.
 - See `.github/workflows/publish-mcp-adapter.yml` and `scripts/build_adapter.sh` for the build/publish steps.
 
@@ -164,3 +164,4 @@ models MCP message shapes and executes tools locally via WIT/wasm host calls.
 
 Dual-licensed under either MIT or Apache-2.0. See `LICENSE-MIT` and
 `LICENSE-APACHE` once added to the repository.
+

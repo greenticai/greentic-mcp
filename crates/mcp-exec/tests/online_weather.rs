@@ -14,7 +14,7 @@ fn online_weather_list_and_describe() {
     let cfg = ExecConfig {
         store: ToolStore::HttpSingleFile {
             name: "weather_api".into(),
-            url: "https://github.com/greentic-ai/greentic/raw/refs/heads/main/greentic/plugins/tools/weather_api.wasm".into(),
+            url: "https://github.com/greenticai/greentic/raw/refs/heads/main/greentic/plugins/tools/weather_api.wasm".into(),
             cache_dir: cache,
         },
         security: Default::default(),
@@ -86,3 +86,4 @@ fn online_weather_list_and_describe() {
         "secret requirements should not be empty"
     );
 }
+

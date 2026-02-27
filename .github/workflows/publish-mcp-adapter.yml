@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PROTOCOL: "25.06.18"
-      IMAGE_BASE: ghcr.io/greentic-ai-org/greentic-mcp-adapter
+      IMAGE_BASE: ghcr.io/greenticai-org/greentic-mcp-adapter
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -125,3 +125,4 @@ jobs:
             --annotation "org.opencontainers.image.revision=${{ github.sha }}" \
             --annotation "mcp_protocol=${PROTOCOL}" \
             --annotation "adapter_version=${VERSION}"
+
