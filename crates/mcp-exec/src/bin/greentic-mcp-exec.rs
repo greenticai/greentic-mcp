@@ -10,6 +10,7 @@ use greentic_mcp_exec::runner::{StoreState, add_secrets_to_linker};
 use wasmtime::component::{Component, Linker};
 use wasmtime::{Config, Engine, Store};
 use wasmtime_wasi::p2::add_to_linker_sync as add_wasi_to_linker;
+use wasmtime_wasi_tls::LinkOptions;
 
 #[derive(Parser)]
 #[command(
@@ -131,6 +132,16 @@ fn invoke_router(
     linker.allow_shadowing(true);
     add_wasi_to_linker(&mut linker)
         .map_err(|err| anyhow!("linking wasi preview2 imports: {}", err))?;
+
+    // Mirror runtime linker setup so router components importing wasi:http/types
+    // and wasi:tls types can instantiate in this direct CLI path.
+    let mut opts = LinkOptions::default();
+    opts.tls(true);
+    wasmtime_wasi_tls::add_to_linker(&mut linker, &mut opts, |h: &mut StoreState| h.wasi_tls())
+        .map_err(|err| anyhow!("linking wasi tls imports: {}", err))?;
+    wasmtime_wasi_http::add_only_http_to_linker_sync(&mut linker)
+        .map_err(|err| anyhow!("linking wasi http imports: {}", err))?;
+
     runner_host_http::add_runner_host_http_to_linker(&mut linker, |state: &mut StoreState| state)
         .map_err(|err| anyhow!("linking runner host http: {}", err))?;
     runner_host_kv::add_runner_host_kv_to_linker(&mut linker, |state: &mut StoreState| state)

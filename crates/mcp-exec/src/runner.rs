@@ -122,9 +122,7 @@ fn run_sync(
     // Add wasi-tls types and turn on the feature in linker
     let mut opts = LinkOptions::default();
     opts.tls(true);
-    wasmtime_wasi_tls::add_to_linker(&mut linker, &mut opts, |h: &mut StoreState| {
-        WasiTls::new(&h.wasi_tls_ctx, &mut h.table)
-    })?;
+    wasmtime_wasi_tls::add_to_linker(&mut linker, &mut opts, |h: &mut StoreState| h.wasi_tls())?;
 
     // Add wasi-http types and turn on the feature in linker
     wasmtime_wasi_http::add_only_http_to_linker_sync(&mut linker)?;
@@ -243,6 +241,18 @@ impl StoreState {
             wasi_tls_ctx,
             wasi_http_ctx,
         }
+    }
+
+    pub fn table_mut(&mut self) -> &mut ResourceTable {
+        &mut self.table
+    }
+
+    pub fn wasi_tls(&mut self) -> WasiTls<'_> {
+        WasiTls::new(&self.wasi_tls_ctx, &mut self.table)
+    }
+
+    pub fn wasi_http_ctx_mut(&mut self) -> &mut WasiHttpCtx {
+        &mut self.wasi_http_ctx
     }
 
     fn http_client(&mut self) -> Result<&reqwest::blocking::Client, String> {

@@ -17,7 +17,7 @@ edition = "2024"
 rust-version = "1.91"
 license = "MIT"
 repository = "https://github.com/agentic/greentic-mcp"
-version = "0.4.21"
+version = "0.4.22"
 
 [workspace.dependencies]
 anyhow = "1.0"
@@ -34,7 +34,7 @@ wasmtime-wasi = { version = "42", default-features = false, features = ["p2"] }
 tempfile = "3"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "gzip", "brotli", "deflate", "rustls"] }
 greentic-types = "0.4"
-greentic-interfaces-wasmtime = "0.4"
+greentic-interfaces-wasmtime = "=0.4.107"
 greentic-interfaces-guest = { version = "0.4", default-features = false, features = ["guest"] }
 indexmap = "2"
 rand = { version = "0.10", features = ["std"] }
@@ -45,4 +45,3 @@ clap = { version = "4.5", features = ["derive"] }
 cap-std = "4"
 wasmtime-wasi-http = "42"
 wasmtime-wasi-tls = "42"
-# https://github.com/greentic-ai-org/greentic-mcp/blob/master/petStore/v2-pet-inventory.component.wasm

@@ -24,7 +24,6 @@ impl WasixExecutor {
     pub fn new() -> Result<Self, McpError> {
         let mut config = wasmtime::Config::new();
         config.wasm_component_model(true);
-        config.async_support(false);
         config.epoch_interruption(true);
         let engine = Engine::new(&config)
             .map_err(|err| McpError::Internal(format!("failed to create engine: {err}")))?;
