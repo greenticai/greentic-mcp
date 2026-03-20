@@ -13,7 +13,10 @@ use wasmtime_wasi::{
     ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView,
     p2::add_to_linker_sync as add_wasi_to_linker,
 };
-use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView};
+use wasmtime_wasi_http::WasiHttpCtx;
+use wasmtime_wasi_http::p2::{
+    WasiHttpCtxView, WasiHttpView, add_only_http_to_linker_sync as add_wasi_http_to_linker,
+};
 use wasmtime_wasi_tls::{LinkOptions, WasiTls, WasiTlsCtx, WasiTlsCtxBuilder};
 
 use crate::ExecRequest;
@@ -125,7 +128,7 @@ fn run_sync(
     wasmtime_wasi_tls::add_to_linker(&mut linker, &mut opts, |h: &mut StoreState| h.wasi_tls())?;
 
     // Add wasi-http types and turn on the feature in linker
-    wasmtime_wasi_http::add_only_http_to_linker_sync(&mut linker)?;
+    add_wasi_http_to_linker(&mut linker)?;
 
     runner_host_http::add_runner_host_http_to_linker(&mut linker, |state: &mut StoreState| state)
         .map_err(|err| RunnerError::Internal(err.to_string()))?;
@@ -409,12 +412,12 @@ impl WasiView for StoreState {
 }
 
 impl WasiHttpView for StoreState {
-    fn ctx(&mut self) -> &mut WasiHttpCtx {
-        &mut self.wasi_http_ctx
-    }
-
-    fn table(&mut self) -> &mut ResourceTable {
-        &mut self.table
+    fn http(&mut self) -> WasiHttpCtxView<'_> {
+        WasiHttpCtxView {
+            ctx: &mut self.wasi_http_ctx,
+            table: &mut self.table,
+            hooks: Default::default(),
+        }
     }
 }
 

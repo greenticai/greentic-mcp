@@ -7,7 +7,10 @@ use wasmtime::component::{Component, Linker, ResourceTable};
 use wasmtime::{Engine, Store, Trap};
 use wasmtime_wasi::p2;
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
-use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView};
+use wasmtime_wasi_http::WasiHttpCtx;
+use wasmtime_wasi_http::p2::{
+    WasiHttpCtxView, WasiHttpView, add_only_http_to_linker_sync as add_wasi_http_to_linker,
+};
 use wasmtime_wasi_tls::{LinkOptions, WasiTls, WasiTlsCtx, WasiTlsCtxBuilder};
 
 use crate::retry;
@@ -155,7 +158,7 @@ fn invoke_blocking(
     })?;
 
     // Add wasi-http types and turn on the feature in linker
-    wasmtime_wasi_http::add_only_http_to_linker_sync(&mut linker).map_err(|err| {
+    add_wasi_http_to_linker(&mut linker).map_err(|err| {
         InvocationFailure::fatal(McpError::Internal(format!(
             "failed to link HTTP helper: {err}"
         )))
@@ -238,11 +241,11 @@ impl WasiView for WasiState {
 }
 
 impl WasiHttpView for WasiState {
-    fn ctx(&mut self) -> &mut WasiHttpCtx {
-        &mut self.wasi_http_ctx
-    }
-
-    fn table(&mut self) -> &mut ResourceTable {
-        &mut self.table
+    fn http(&mut self) -> WasiHttpCtxView<'_> {
+        WasiHttpCtxView {
+            ctx: &mut self.wasi_http_ctx,
+            table: &mut self.table,
+            hooks: Default::default(),
+        }
     }
 }

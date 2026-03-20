@@ -10,6 +10,7 @@ use greentic_mcp_exec::runner::{StoreState, add_secrets_to_linker};
 use wasmtime::component::{Component, Linker};
 use wasmtime::{Config, Engine, Store};
 use wasmtime_wasi::p2::add_to_linker_sync as add_wasi_to_linker;
+use wasmtime_wasi_http::p2::add_only_http_to_linker_sync as add_wasi_http_to_linker;
 use wasmtime_wasi_tls::LinkOptions;
 
 #[derive(Parser)]
@@ -139,7 +140,7 @@ fn invoke_router(
     opts.tls(true);
     wasmtime_wasi_tls::add_to_linker(&mut linker, &mut opts, |h: &mut StoreState| h.wasi_tls())
         .map_err(|err| anyhow!("linking wasi tls imports: {}", err))?;
-    wasmtime_wasi_http::add_only_http_to_linker_sync(&mut linker)
+    add_wasi_http_to_linker(&mut linker)
         .map_err(|err| anyhow!("linking wasi http imports: {}", err))?;
 
     runner_host_http::add_runner_host_http_to_linker(&mut linker, |state: &mut StoreState| state)

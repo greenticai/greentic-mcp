@@ -13,8 +13,8 @@ resolver = "2"
 edition = "2024"
 rust-version = "1.91"
 license = "MIT"
-repository = "https://github.com/agentic/greentic-mcp"
-version = "0.4.22"
+repository = "https://github.com/agenticai/greentic-mcp"
+version = "0.4.23"
 
 [workspace.dependencies]
 anyhow = "1.0"
@@ -23,7 +23,7 @@ base64 = "0.22"
 cap-std = "4"
 clap = { version = "4.5", features = ["derive"] }
 greentic-interfaces-guest = { version = "0.4", default-features = false, features = ["guest"] }
-greentic-interfaces-wasmtime = "=0.4.107"
+greentic-interfaces-wasmtime = "0.4"
 greentic-mcp-exec = { version = "0.4", path = "crates/mcp-exec" }
 greentic-types = "0.4"
 hex = "0.4"
@@ -38,11 +38,11 @@ tempfile = "3"
 thiserror = "2.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 tracing = "0.1"
-wasmtime = { version = "42", default-features = false, features = ["async", "component-model", "cranelift", "runtime", "std"] }
-wasmtime-wasi = { version = "42", default-features = false, features = ["p2"] }
-wasmtime-wasi-http = "42"
-wasmtime-wasi-tls = "42"
-wit-bindgen = { version = "0.53", features = ["macros"] }
+wasmtime = { version = "43", default-features = false, features = ["async", "component-model", "cranelift", "runtime", "std"] }
+wasmtime-wasi = { version = "43", default-features = false, features = ["p2"] }
+wasmtime-wasi-http = "43"
+wasmtime-wasi-tls = "43"
+wit-bindgen = { version = "0.54", features = ["macros"] }
 
 [profile.test]
 debug = "line-tables-only"
