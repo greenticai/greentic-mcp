@@ -139,4 +139,4 @@ if [ -d "${LEGACY_OUT_DIR}" ] || mkdir -p "${LEGACY_OUT_DIR}"; then
   echo "  component: ${LEGACY_OUT_DIR}/$(basename "${COMP_WASM}")"
 fi
 echo "Intended OCI ref:"
-echo "  ghcr.io/greentic-ai-org/greentic-mcp-adapter:25.06.18-v${VERSION}"
+echo "  ghcr.io/greenticai/greentic-mcp-adapter:25.06.18-v${VERSION}"

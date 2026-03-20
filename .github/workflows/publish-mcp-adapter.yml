@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PROTOCOL: "25.06.18"
-      IMAGE_BASE: ghcr.io/greentic-ai-org/greentic-mcp-adapter
+      IMAGE_BASE: ghcr.io/greenticai/greentic-mcp-adapter
     steps:
       - name: Checkout
         uses: actions/checkout@v4
