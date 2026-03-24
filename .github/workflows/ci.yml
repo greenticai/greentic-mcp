@@ -2,7 +2,7 @@ name: rust-ci
 
 on:
   push:
-    branches: [ master ]
+    branches: [main]
     tags: [ "v*" ]
   pull_request:
   schedule:
@@ -45,7 +45,7 @@ jobs:
       - run: cargo test --locked --features "describe-v1,runner-host-v1"
 
   online:
-    if: github.event_name == 'schedule' || github.ref == 'refs/heads/master'
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: -C link-arg=-fuse-ld=bfd

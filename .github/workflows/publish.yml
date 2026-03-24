@@ -2,7 +2,7 @@ name: Publish crates (single or workspace)
 
 on:
   push:
-    branches: [ master ]
+    branches: [main]
     tags: [ "v*" ]   # optional: legacy; our per-crate tags are <name>-vX.Y.Z
   workflow_dispatch:
 
