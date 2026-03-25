@@ -6,6 +6,9 @@ on:
     tags: [ "v*" ]   # optional: legacy; our per-crate tags are <name>-vX.Y.Z
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
