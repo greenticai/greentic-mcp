@@ -1,25 +1,28 @@
-# Security Fix Report
+# SECURITY_FIX_REPORT
 
-Date: 2026-03-25 (UTC)
-Branch: `ci/add-workflow-permissions`
+Date: 2026-03-27 (UTC)
+Branch: `chore/shared-codex-security-fix`
 
 ## Inputs Reviewed
 - Dependabot alerts: `0`
 - Code scanning alerts: `0`
 - New PR dependency vulnerabilities: `0`
 
-## Repository/PR Checks Performed
-- Compared PR changes against `origin/main`:
-  - Changed files: `.github/workflows/publish.yml`
-- Enumerated dependency manifests/lockfiles in repository:
-  - `Cargo.toml`, `Cargo.lock`, and workspace crate `Cargo.toml`/fixture `Cargo.lock` files
-- Checked whether dependency files changed in this PR:
-  - No dependency manifest or lockfile changes detected
+## Checks Performed
+- Parsed provided alert payload: `{"dependabot": [], "code_scanning": []}`
+- Verified in-repo alert files are empty:
+  - `dependabot-alerts.json`
+  - `code-scanning-alerts.json`
+  - `pr-vulnerable-changes.json`
+- Checked PR diff against `origin/main`:
+  - Changed file: `.github/workflows/codex-security-fix.yml`
+  - No dependency manifest or lockfile changes in this PR
+- Attempted dependency audit with `cargo audit --json`:
+  - Blocked by CI sandbox rustup write restriction (`/home/runner/.rustup/tmp` is read-only)
 
-## Remediation Actions
-- No vulnerable dependencies or code-scanning findings were provided.
-- No new dependency vulnerabilities were introduced by this PR.
-- No dependency or source-code security remediation was required.
+## Remediation
+- No vulnerabilities were identified from provided alerts or PR dependency changes.
+- No code or dependency fixes were required.
 
 ## Files Modified
-- `SECURITY_FIX_REPORT.md` (added)
+- `SECURITY_FIX_REPORT.md` (updated)
