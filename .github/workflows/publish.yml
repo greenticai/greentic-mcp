@@ -14,33 +14,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-test:
-    runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -C link-arg=-fuse-ld=bfd
-      CARGO_INCREMENTAL: 0
-      CARGO_PROFILE_DEV_DEBUG: 0
-      CARGO_PROFILE_TEST_DEBUG: 0
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.91.0
-      - name: Lint & Test
-        run: |
-          set -euxo pipefail
-          cargo fmt --all -- --check
-          cargo clippy --workspace --all-targets -- -D warnings
-          # Free clippy artifacts before the heaviest compile/test pass.
-          cargo clean
-          cargo test --workspace --all-features -- --nocapture
+  ci:
+    uses: ./.github/workflows/ci.yml
 
   publish:
     if: github.event_name == 'push'
-    # Always publish off the exact commit we tested.
-    needs: build-test
+    needs: ci
     runs-on: ubuntu-latest
     permissions:
       contents: read
