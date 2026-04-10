@@ -7,7 +7,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: release-binaries-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
