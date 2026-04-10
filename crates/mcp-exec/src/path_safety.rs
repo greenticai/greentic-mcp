@@ -41,3 +41,56 @@ pub fn normalize_under_root(root: &Path, candidate: &Path) -> Result<PathBuf> {
 
     Ok(canon)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn normalizes_existing_relative_path() {
+        let root = tempdir().expect("tmp root");
+        let nested = root.path().join("tools");
+        fs::create_dir_all(&nested).expect("mkdir");
+        let file = nested.join("example.wasm");
+        fs::write(&file, b"wasm").expect("write");
+
+        let normalized =
+            normalize_under_root(root.path(), Path::new("tools/example.wasm")).expect("normalize");
+        assert_eq!(
+            normalized.file_name(),
+            Some(std::ffi::OsStr::new("example.wasm"))
+        );
+        assert!(normalized.starts_with(root.path()));
+    }
+
+    #[test]
+    fn rejects_absolute_paths() {
+        let root = tempdir().expect("tmp root");
+        let err = normalize_under_root(root.path(), Path::new("/etc/passwd"))
+            .expect_err("absolute path should fail");
+        let text = err.to_string();
+        assert!(text.contains("absolute paths are not allowed"));
+    }
+
+    #[test]
+    fn rejects_paths_that_escape_root() {
+        let root = tempdir().expect("tmp root");
+        let err = normalize_under_root(root.path(), Path::new("../outside"))
+            .expect_err("escape should fail");
+        assert!(err.to_string().contains("path escapes root"));
+    }
+
+    #[test]
+    fn accepts_missing_leaf_under_root() {
+        let root = tempdir().expect("tmp root");
+        let nested = root.path().join("tools");
+        fs::create_dir_all(&nested).expect("mkdir");
+
+        let normalized = normalize_under_root(root.path(), Path::new("tools/missing.wasm"))
+            .expect("normalize missing leaf");
+        assert!(normalized.starts_with(root.path()));
+        assert!(normalized.ends_with("tools/missing.wasm"));
+    }
+}

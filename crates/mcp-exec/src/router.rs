@@ -91,7 +91,7 @@ pub fn render_response(response: &Response) -> Value {
 }
 
 fn render_tool_result(result: &ToolResult) -> Value {
-    let (content, structured_content) = result.content.iter().map(render_content_block).fold(
+    let (content, _structured_content) = result.content.iter().map(render_content_block).fold(
         (Vec::new(), Vec::new()),
         |mut acc, (c, s)| {
             acc.0.push(c);
@@ -106,7 +106,10 @@ fn render_tool_result(result: &ToolResult) -> Value {
         "ok": true,
         "result": {
             "content": content,
-            "structured_content": if structured_content.is_empty() { None } else { Some(structured_content) },
+            "structured_content": result
+                .structured_content
+                .as_ref()
+                .map(|raw| serde_json::from_str::<serde_json::Value>(raw).unwrap_or_else(|_| raw.clone().into())),
         }
     })
 }
@@ -151,4 +154,163 @@ pub fn tool_error_to_value(tool: &str, err: ToolError) -> Value {
             "protocol": "25.06.18",
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::router::bindings::exports::wasix::mcp::router as generated_router_types;
+    use crate::runner::StoreState;
+    use wasmtime::Config;
+    use wasmtime::Engine;
+    use wasmtime::Store;
+    use wasmtime::component::Component;
+    use wasmtime::component::Linker;
+    use wat::parse_str;
+
+    fn empty_router_component() -> (Engine, Component) {
+        let mut config = Config::new();
+        config.wasm_component_model(true);
+        let engine = Engine::new(&config).expect("engine");
+        Component::from_binary(&engine, &parse_str("(component)").expect("wat"))
+            .map(|component| (engine, component))
+            .expect("component")
+    }
+
+    #[test]
+    fn render_response_handles_completed_result() {
+        let value = render_response(&Response::Completed(ToolResult {
+            content: vec![
+                ContentBlock::Text(generated_router_types::TextContent {
+                    text: "hello".into(),
+                    annotations: Some(generated_router_types::Annotations {
+                        audience: Some(vec![generated_router_types::Role::Assistant]),
+                        priority: Some(1.0),
+                        timestamp: Some("ts".into()),
+                    }),
+                }),
+                ContentBlock::Image(generated_router_types::ImageContent {
+                    data: "aGVsbG8=".into(),
+                    mime_type: "image/png".into(),
+                    annotations: None,
+                }),
+            ],
+            structured_content: Some(r#"{"a":1}"#.into()),
+            progress: Some(vec![generated_router_types::ProgressNotification {
+                progress: Some(0.5),
+                message: Some("half".into()),
+                annotations: Some(generated_router_types::Annotations {
+                    audience: None,
+                    priority: None,
+                    timestamp: None,
+                }),
+            }]),
+            meta: Some(vec![generated_router_types::MetaEntry {
+                key: "source".into(),
+                value: "\"router\"".into(),
+            }]),
+            is_error: Some(false),
+        }));
+
+        assert_eq!(value["ok"], serde_json::json!(true));
+        assert_eq!(
+            value["result"]["content"]
+                .as_array()
+                .expect("content")
+                .len(),
+            2
+        );
+        assert_eq!(
+            value["result"]["structured_content"]["a"],
+            serde_json::json!(1)
+        );
+    }
+
+    #[test]
+    fn render_content_maps_all_variants() {
+        let image =
+            render_content_block(&ContentBlock::Image(generated_router_types::ImageContent {
+                data: "AA==".into(),
+                mime_type: "image/png".into(),
+                annotations: None,
+            }));
+        assert_eq!(image.0["type"], serde_json::json!("image"));
+        assert_eq!(image.1, None);
+
+        let resource = render_content_block(&ContentBlock::ResourceLink(
+            generated_router_types::ResourceLinkContent {
+                uri: "uri".into(),
+                title: None,
+                description: None,
+                mime_type: Some("text/plain".into()),
+                annotations: None,
+            },
+        ));
+        assert_eq!(resource.0["type"], serde_json::json!("resource"));
+
+        let embedded = render_content_block(&ContentBlock::EmbeddedResource(
+            generated_router_types::EmbeddedResource {
+                uri: "uri".into(),
+                title: None,
+                description: None,
+                mime_type: Some("text/plain".into()),
+                data: "".into(),
+                annotations: None,
+            },
+        ));
+        assert_eq!(embedded.0["type"], serde_json::json!("resource-embed"));
+
+        let audio =
+            render_content_block(&ContentBlock::Audio(generated_router_types::AudioContent {
+                data: "AA==".into(),
+                mime_type: "audio/wav".into(),
+                annotations: None,
+            }));
+        assert_eq!(audio.0["type"], serde_json::json!("audio"));
+    }
+
+    #[test]
+    fn maps_tool_errors_to_expected_status_codes() {
+        assert_eq!(
+            tool_error_to_value("tool", ToolError::InvalidParameters("bad".into()))["error"]["status"],
+            400
+        );
+        assert_eq!(
+            tool_error_to_value("tool", ToolError::ExecutionError("oops".into()))["error"]["status"],
+            500
+        );
+        assert_eq!(
+            tool_error_to_value("tool", ToolError::SchemaError("bad".into()))["error"]["status"],
+            422
+        );
+        assert_eq!(
+            tool_error_to_value("tool", ToolError::NotFound("missing".into()))["error"]["status"],
+            404
+        );
+    }
+
+    #[test]
+    fn list_tooling_router_returns_none_when_export_missing() {
+        let (engine, component) = empty_router_component();
+        let mut linker = Linker::new(&engine);
+        let mut store = Store::new(&engine, StoreState::new(false, None, None));
+        let result = try_list_tools_router(&component, &mut linker, &mut store).expect("no export");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn call_router_returns_none_when_export_missing() {
+        let (engine, component) = empty_router_component();
+        let mut linker = Linker::new(&engine);
+        let mut store = Store::new(&engine, StoreState::new(false, None, None));
+        let result = try_call_tool_router(
+            &component,
+            &mut linker,
+            &mut store,
+            "tool",
+            &"{}".to_string(),
+        )
+        .expect("no export");
+        assert!(result.is_none());
+    }
 }

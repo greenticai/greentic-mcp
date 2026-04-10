@@ -117,3 +117,54 @@ pub enum RunnerError {
     #[error("runner is not implemented for this configuration")]
     NotImplemented,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_error_variants() {
+        let resolve = ExecError::resolve("component", ResolveError::NotFound);
+        assert!(matches!(resolve, ExecError::Resolve { .. }));
+
+        let verification = ExecError::verification(
+            "component",
+            VerificationError::DigestMismatch {
+                expected: "abc".into(),
+                actual: "def".into(),
+            },
+        );
+        assert!(matches!(verification, ExecError::Verification { .. }));
+
+        let runner = ExecError::runner("component", RunnerError::Internal("x".into()));
+        assert!(matches!(runner, ExecError::Runner { .. }));
+
+        let missing = ExecError::not_found("comp", "do");
+        assert!(matches!(missing, ExecError::NotFound { .. }));
+
+        let tool = ExecError::tool_error("comp", "run", "ERR", serde_json::json!({"ok":false}));
+        assert!(matches!(tool, ExecError::Tool { .. }));
+    }
+
+    #[test]
+    fn verify_digest_error_messages_are_stable() {
+        let err = VerificationError::DigestMismatch {
+            expected: "a".into(),
+            actual: "b".into(),
+        };
+        let text = err.to_string();
+        assert!(text.contains("digest mismatch"));
+        assert!(text.contains("expected a"));
+        assert!(text.contains("got b"));
+    }
+
+    #[test]
+    fn runner_error_formats_timeout() {
+        let err = RunnerError::Timeout {
+            elapsed: std::time::Duration::from_millis(42),
+        };
+        let text = err.to_string();
+        assert!(text.contains("timed out"));
+        assert!(text.contains("42"));
+    }
+}

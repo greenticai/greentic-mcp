@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "global": {
+    "line_coverage_min": 60.0
+  },
+  "defaults": {
+    "per_file_line_coverage_min": 60.0
+  },
+  "exclusions": {
+    "files": [
+      "greentic-mcp/src/bin/greentic-mcp.rs",
+      "crates/mcp-exec/src/bin/greentic-mcp-exec.rs",
+      "greentic-mcp/tests/fixtures/echo_tool/src/lib.rs",
+      "crates/mcp-exec/tests/legacy_exec/src/lib.rs",
+      "crates/mcp-exec/tests/router_echo/src/lib.rs"
+    ]
+  },
+  "per_file": {
+    "greentic-mcp/src/auth.rs": {
+      "line_coverage_min": 85.0
+    },
+    "greentic-mcp/src/protocol.rs": {
+      "line_coverage_min": 85.0
+    },
+    "greentic-mcp/src/executor.rs": {
+      "line_coverage_min": 75.0
+    },
+    "crates/mcp-exec/src/path_safety.rs": {
+      "line_coverage_min": 85.0
+    },
+    "crates/mcp-exec/src/resolve.rs": {
+      "line_coverage_min": 80.0
+    },
+    "crates/mcp-exec/src/runner.rs": {
+      "line_coverage_min": 75.0
+    },
+    "crates/mcp-exec/src/verify.rs": {
+      "line_coverage_min": 85.0
+    },
+    "crates/mcp-adapter/src/lib.rs": {
+      "line_coverage_min": 80.0
+    }
+  }
+}

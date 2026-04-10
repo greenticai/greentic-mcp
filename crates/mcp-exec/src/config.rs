@@ -92,3 +92,66 @@ impl fmt::Debug for ExecConfig {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use greentic_types::{EnvId, TenantCtx, TenantId};
+
+    #[derive(Clone)]
+    struct TestSecretsStore;
+
+    impl SecretsStore for TestSecretsStore {
+        fn read(&self, _scope: &TenantCtx, _name: &str) -> Result<Vec<u8>, String> {
+            Ok(b"value".to_vec())
+        }
+    }
+
+    #[test]
+    fn runtime_policy_defaults_are_reasonable() {
+        let policy = RuntimePolicy::default();
+        assert_eq!(policy.max_attempts, 1);
+        assert_eq!(policy.base_backoff, Duration::from_millis(100));
+        assert_eq!(policy.wallclock_timeout, Duration::from_secs(30));
+        assert_eq!(policy.per_call_timeout, Duration::from_secs(10));
+        assert_eq!(policy.fuel, None);
+        assert_eq!(policy.max_memory, None);
+    }
+
+    #[test]
+    fn verify_policy_defaults_are_safe() {
+        let policy = VerifyPolicy::default();
+        assert!(!policy.allow_unverified);
+        assert!(policy.required_digests.is_empty());
+        assert!(policy.trusted_signers.is_empty());
+    }
+
+    #[test]
+    fn secrets_store_defaults_are_not_implemented() {
+        let scope = TenantCtx::new(EnvId("env".into()), TenantId("tenant".into()));
+        let store = TestSecretsStore;
+        assert_eq!(
+            store.write(&scope, "token", b"abc"),
+            Err("write-not-implemented".into())
+        );
+        assert_eq!(
+            store.delete(&scope, "token"),
+            Err("delete-not-implemented".into())
+        );
+    }
+
+    #[test]
+    fn exec_config_debug_includes_secrets_store() {
+        let config = ExecConfig {
+            store: ToolStore::LocalDir(std::path::PathBuf::from("target")),
+            security: VerifyPolicy::default(),
+            runtime: RuntimePolicy::default(),
+            http_enabled: false,
+            secrets_store: Some(std::sync::Arc::new(TestSecretsStore)),
+        };
+
+        let rendered = format!("{config:?}");
+        assert!(rendered.contains("secrets_store"));
+        assert!(rendered.contains("<dyn SecretsStore>"));
+    }
+}

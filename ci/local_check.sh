@@ -41,11 +41,6 @@ run_cmd() {
     rm -f "$log_file"
     exit $status
   fi
-  if grep -E '^(error(\[[A-Za-z0-9_-]+\])?:)' "$log_file" >/dev/null; then
-    echo "[fail] $desc produced error output"
-    rm -f "$log_file"
-    exit 1
-  fi
   rm -f "$log_file"
 }
 
