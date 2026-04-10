@@ -37,55 +37,16 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
 
-  release-plan:
-    needs: [ci, release-tag]
-    runs-on: ubuntu-latest
-    outputs:
-      publish: ${{ steps.check.outputs.publish }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.91.0
-      - name: Check crates.io versions (skip if already published)
-        id: check
-        run: |
-          set -euo pipefail
-          crates=("greentic-mcp-exec" "greentic-mcp")
-          publish=false
-          metadata=$(cargo metadata --format-version 1 --no-deps)
-          ua="greentic-publish-check/1.0 (github-actions)"
-          for crate in "${crates[@]}"; do
-            local_ver=$(printf '%s' "$metadata" | jq -r '.packages[] | select(.name=="'"$crate"'") | .version')
-            resp=$(curl -s -H "User-Agent: ${ua}" -w "%{http_code}" -o /tmp/crate.json "https://crates.io/api/v1/crates/${crate}" || true)
-            if [ "$resp" = "200" ]; then
-              remote_ver=$(jq -r '.crate.max_version // ""' /tmp/crate.json)
-            else
-              echo "crates.io lookup for ${crate} failed with HTTP ${resp}; assuming not published"
-              remote_ver=""
-            fi
-            if [ "$local_ver" != "$remote_ver" ]; then
-              publish=true
-              echo "needs_${crate//=/_}=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "needs_${crate//=/_}=false" >> "$GITHUB_OUTPUT"
-            fi
-          done
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
-
   release-binaries:
-    if: needs.release-plan.outputs.publish == 'true'
-    needs: [release-plan, release-tag]
+    needs: [ci, release-tag]
     uses: ./.github/workflows/release-binaries.yml
     with:
       release_tag: ${{ needs.release-tag.outputs.tag }}
       release_version: ${{ needs.release-tag.outputs.version }}
-      publish_changed: ${{ needs.release-plan.outputs.publish }}
     secrets: inherit
 
   publish:
-    if: needs.release-plan.outputs.publish == 'true'
-    needs: [release-plan, release-binaries]
+    needs: [release-binaries]
     runs-on: ubuntu-latest
     permissions:
       contents: read

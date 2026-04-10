@@ -9,9 +9,6 @@ on:
       release_version:
         required: true
         type: string
-      publish_changed:
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -22,7 +19,6 @@ concurrency:
 
 jobs:
   release:
-    if: inputs.publish_changed == 'true'
     strategy:
       fail-fast: false
       matrix:
