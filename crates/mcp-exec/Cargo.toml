@@ -4,12 +4,18 @@ version.workspace = true
 edition = "2024"
 license = "MIT"
 description = "Greentic executor for running wasix:mcp-compatible WebAssembly components with policy-driven verification and sandboxing."
-repository = "https://github.com/agentic/greentic-mcp"
+repository = "https://github.com/greenticai/greentic-mcp"
+homepage = "https://github.com/greenticai/greentic-mcp"
 documentation = "https://docs.rs/greentic-mcp-exec"
 readme = "README.md"
 keywords = ["greentic", "wasm", "executor", "mcp"]
 categories = ["wasm"]
 include = ["src/**", "tests/**", "README.md", "Cargo.toml", "wit/**"]
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/greentic-mcp-v{ version }-{ target }.tgz"
+pkg-fmt = "tgz"
+bin-dir = "greentic-mcp-v{ version }-{ target }/{ bin }{ binary-ext }"
 
 [features]
 default = ["describe-v1", "runner-host-v1"]
