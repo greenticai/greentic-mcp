@@ -17,9 +17,29 @@ jobs:
     uses: ./.github/workflows/ci.yml
     secrets: inherit
 
-  release-binaries:
+  release-tag:
     needs: ci
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release_tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.0
+      - name: Resolve release tag from workspace version
+        id: release_tag
+        run: |
+          set -euo pipefail
+          version=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name=="greentic-mcp") | .version')
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+
+  release-binaries:
+    needs: release-tag
     uses: ./.github/workflows/release-binaries.yml
+    with:
+      release_tag: ${{ needs.release-tag.outputs.tag }}
     secrets: inherit
 
   publish:
