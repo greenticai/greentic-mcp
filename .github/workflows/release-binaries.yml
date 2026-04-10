@@ -13,6 +13,7 @@ on:
 permissions:
   contents: write
 
+# Intentional stable workflow comment to allow safe rerun PRs when release infra needs retriggering.
 concurrency:
   group: release-binaries-${{ github.ref }}
   cancel-in-progress: false
