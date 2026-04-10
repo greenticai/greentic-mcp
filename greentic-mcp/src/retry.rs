@@ -16,3 +16,26 @@ pub fn backoff(base: Duration, attempt: u32) -> Duration {
     let jittered = (max as f64 * jitter).round().clamp(1.0, u64::MAX as f64);
     Duration::from_millis(jittered as u64)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backoff_includes_jitter_and_grows_with_attempt() {
+        let short = backoff(Duration::from_millis(100), 0);
+        assert!(short >= Duration::from_millis(50));
+        assert!(short <= Duration::from_millis(150));
+
+        let long = backoff(Duration::from_millis(100), 2);
+        assert!(long >= Duration::from_millis(200));
+        assert!(long <= Duration::from_millis(600));
+        assert!(long >= short);
+    }
+
+    #[test]
+    fn backoff_honors_minimum_floor() {
+        let tiny = backoff(Duration::from_millis(0), 0);
+        assert!(tiny >= Duration::from_millis(1));
+    }
+}

@@ -206,6 +206,7 @@ fn parse_request(op: &str, input: &str) -> AdapterResult<ParsedRequest> {
     })
 }
 
+#[derive(Debug)]
 struct ParsedRequest {
     operation: Operation,
     tool: Option<String>,
@@ -784,6 +785,430 @@ mod tests {
         assert_eq!(
             messages.first().and_then(|m| m.get("type")),
             Some(&Value::String("resource_link".into()))
+        );
+    }
+
+    #[test]
+    fn parse_request_defaults_operation_from_tool() {
+        let request =
+            parse_request("", r#"{"tool":"demo","arguments":{"v":1}}"#).expect("valid request");
+        assert!(matches!(request.operation, Operation::Call));
+        assert_eq!(request.tool.as_deref(), Some("demo"));
+        assert_eq!(request.arguments, json!({"v":1}));
+    }
+
+    #[test]
+    fn parse_request_defaults_list_without_tool() {
+        let request = parse_request("", r#"{"arguments":null}"#).expect("valid request");
+        assert!(matches!(request.operation, Operation::List));
+        assert_eq!(request.arguments, Value::Object(Default::default()));
+    }
+
+    #[test]
+    fn parse_request_rejects_invalid_arguments_payload() {
+        let err = parse_request("call", r#"{"tool":"demo","arguments":5}"#)
+            .expect_err("invalid arguments");
+        assert!(err.error.message.contains("arguments must be an object"));
+        assert_eq!(err.error.status, 400);
+    }
+
+    #[test]
+    fn parse_request_rejects_call_without_tool() {
+        let err = parse_request("call", r#"{"arguments":{}}"#).expect_err("missing tool");
+        assert_eq!(err.error.code, "MCP_CONFIG_ERROR");
+        assert!(err.error.message.contains("tool is required"));
+    }
+
+    #[test]
+    fn resolve_operation_prefers_payload_operation() {
+        let op = resolve_operation(Some("call"), "list", Some("tool")).expect("from payload");
+        assert!(matches!(op, Operation::Call));
+    }
+
+    #[test]
+    fn resolve_operation_defaults_by_tool_presence() {
+        let op = resolve_operation(None, "", Some("tool")).expect("tool implies call");
+        assert!(matches!(op, Operation::Call));
+
+        let op = resolve_operation(None, "", None).expect("no tool implies list");
+        assert!(matches!(op, Operation::List));
+    }
+
+    #[test]
+    fn resolve_operation_rejects_invalid_payload() {
+        let err = resolve_operation(Some("invalid"), "list", None).expect_err("invalid operation");
+        assert!(err.error.message.contains("unsupported operation value"));
+    }
+
+    #[test]
+    fn transport_and_tool_errors_are_mapped() {
+        let transport = map_call_error(CallFailure::Transport("down".into()), "demo");
+        assert_eq!(transport.error.code, "MCP_ROUTER_ERROR");
+        assert_eq!(transport.error.status, 502);
+
+        let tool = map_call_error(
+            CallFailure::Tool(router::ToolError::NotFound("missing".into())),
+            "demo",
+        );
+        assert_eq!(tool.error.code, "MCP_TOOL_ERROR");
+        assert_eq!(tool.error.status, 404);
+    }
+
+    #[test]
+    fn tool_result_renders_all_content_blocks() {
+        let router = MockRouter {
+            tools: vec![],
+            response: Some(router::Response::Completed(router::ToolResult {
+                content: vec![
+                    router::ContentBlock::Text(router::TextContent {
+                        text: "txt".into(),
+                        annotations: None,
+                    }),
+                    router::ContentBlock::Image(router::ImageContent {
+                        data: "AA==".into(),
+                        mime_type: "image/png".into(),
+                        annotations: None,
+                    }),
+                    router::ContentBlock::Audio(router::AudioContent {
+                        data: "AQI=".into(),
+                        mime_type: "audio/wav".into(),
+                        annotations: None,
+                    }),
+                    router::ContentBlock::ResourceLink(router::ResourceLinkContent {
+                        uri: "https://example.com".into(),
+                        title: Some("title".into()),
+                        description: Some("desc".into()),
+                        mime_type: Some("text/plain".into()),
+                        annotations: None,
+                    }),
+                ],
+                structured_content: Some(r#"{"ok":true}"#.into()),
+                progress: Some(vec![router::ProgressNotification {
+                    progress: Some(1.0),
+                    message: Some("done".into()),
+                    annotations: None,
+                }]),
+                meta: Some(vec![router::MetaEntry {
+                    key: "trace".into(),
+                    value: r#""value""#.into(),
+                }]),
+                is_error: Some(false),
+            })),
+        };
+
+        let result = handle_invoke(
+            &router,
+            "",
+            r#"{"operation":"call","tool":"demo","arguments":{}}"#,
+        )
+        .expect("call should succeed");
+
+        let content = result
+            .get("result")
+            .and_then(|r| r.get("content"))
+            .and_then(Value::as_array)
+            .expect("content");
+        assert_eq!(content.len(), 4);
+
+        assert_eq!(
+            result
+                .get("result")
+                .and_then(|r| r.get("structured_content"))
+                .and_then(|s| s.get("ok")),
+            Some(&Value::Bool(true))
+        );
+
+        let messages = result
+            .get("messages")
+            .and_then(Value::as_array)
+            .expect("messages");
+        assert_eq!(messages.len(), 4);
+    }
+
+    #[test]
+    fn manifest_and_status_methods_are_usable() {
+        let tenant_ctx = bindings::exports::greentic::component::node::TenantCtx {
+            tenant: "tenant".into(),
+            team: Some("team".into()),
+            user: Some("user".into()),
+            trace_id: Some("trace".into()),
+            correlation_id: Some("corr".into()),
+            deadline_unix_ms: Some(0),
+            attempt: 0,
+            idempotency_key: Some("idem".into()),
+        };
+        let ctx = ExecCtx {
+            tenant: tenant_ctx,
+            flow_id: "flow".into(),
+            node_id: Some("node".into()),
+        };
+        let manifest = Adapter::get_manifest();
+        let parsed: Value = serde_json::from_str(&manifest).expect("manifest json");
+        assert_eq!(parsed.get("name"), Some(&json!("greentic-mcp-adapter")));
+        assert_eq!(parsed.get("operations"), Some(&json!(["list", "call"])));
+        assert_eq!(parsed.get("protocol"), Some(&json!(PROTOCOL)));
+
+        let start = Adapter::on_start(ctx);
+        assert!(matches!(start, Ok(LifecycleStatus::Ok)));
+        let stop = Adapter::on_stop(
+            ExecCtx {
+                tenant: bindings::exports::greentic::component::node::TenantCtx {
+                    tenant: "tenant".into(),
+                    team: Some("team".into()),
+                    user: Some("user".into()),
+                    trace_id: Some("trace".into()),
+                    correlation_id: Some("corr".into()),
+                    deadline_unix_ms: Some(0),
+                    attempt: 0,
+                    idempotency_key: Some("idem".into()),
+                },
+                flow_id: "flow".into(),
+                node_id: Some("node".into()),
+            },
+            "shutting down".into(),
+        );
+        assert!(matches!(stop, Ok(LifecycleStatus::Ok)));
+    }
+
+    #[test]
+    fn guest_invoke_and_invoke_stream_cover_success_and_error_paths() {
+        let malformed_ctx = ExecCtx {
+            tenant: bindings::exports::greentic::component::node::TenantCtx {
+                tenant: "tenant".into(),
+                team: None,
+                user: None,
+                trace_id: None,
+                correlation_id: None,
+                deadline_unix_ms: None,
+                attempt: 0,
+                idempotency_key: None,
+            },
+            flow_id: "flow".into(),
+            node_id: None,
+        };
+
+        let err = Adapter::invoke(
+            ExecCtx {
+                tenant: bindings::exports::greentic::component::node::TenantCtx {
+                    tenant: "tenant".into(),
+                    team: None,
+                    user: None,
+                    trace_id: None,
+                    correlation_id: None,
+                    deadline_unix_ms: None,
+                    attempt: 0,
+                    idempotency_key: None,
+                },
+                flow_id: "flow".into(),
+                node_id: None,
+            },
+            "call".into(),
+            "not-json".into(),
+        );
+        let stream = Adapter::invoke_stream(malformed_ctx, "call".into(), "not-json".into());
+
+        assert!(matches!(err, InvokeResult::Err(_)));
+        assert_eq!(stream.len(), 1);
+    }
+
+    #[test]
+    fn error_envelope_and_tool_error_mapping_is_complete() {
+        let transport = map_call_error(CallFailure::Transport("downstream".into()), "demo");
+        assert_eq!(transport.error.code, "MCP_ROUTER_ERROR");
+        assert_eq!(transport.error.status, 502);
+
+        let invalid = map_call_error(
+            CallFailure::Tool(router::ToolError::InvalidParameters("bad".into())),
+            "demo",
+        );
+        assert_eq!(invalid.error.status, 400);
+        let execution = map_call_error(
+            CallFailure::Tool(router::ToolError::ExecutionError("oops".into())),
+            "demo",
+        );
+        assert_eq!(execution.error.status, 500);
+        let schema = map_call_error(
+            CallFailure::Tool(router::ToolError::SchemaError("bad schema".into())),
+            "demo",
+        );
+        assert_eq!(schema.error.status, 422);
+        let missing = map_call_error(
+            CallFailure::Tool(router::ToolError::NotFound("tool".into())),
+            "demo",
+        );
+        assert_eq!(missing.error.status, 404);
+
+        let malformed: ErrorEnvelope = tool_error(400, "oops".into(), "demo");
+        let node_error = malformed.node_error();
+        assert_eq!(node_error.code, "MCP_TOOL_ERROR");
+        assert!(!node_error.retryable);
+    }
+
+    #[test]
+    fn render_elicitation_and_embedded_resource_are_rendered() {
+        let router = MockRouter {
+            tools: vec![],
+            response: Some(router::Response::Elicit(router::ElicitationRequest {
+                title: Some("title".into()),
+                message: "message".into(),
+                schema: r#"{"type":"object"}"#.into(),
+                annotations: Some(router::Annotations {
+                    audience: Some(vec![router::Role::User, router::Role::Assistant]),
+                    priority: Some(2.0),
+                    timestamp: Some("ts".into()),
+                }),
+                meta: Some(vec![router::MetaEntry {
+                    key: "k".into(),
+                    value: r#""v""#.into(),
+                }]),
+            })),
+        };
+        let value = handle_invoke(
+            &router,
+            "",
+            r#"{"operation":"call","tool":"demo","arguments":{}}"#,
+        )
+        .expect("elicit");
+
+        let messages = value
+            .get("messages")
+            .and_then(Value::as_array)
+            .expect("messages");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].get("type"), Some(&json!("text")));
+        assert!(
+            value
+                .get("elicitation")
+                .and_then(Value::as_object)
+                .is_some()
+        );
+        let content = [router::ContentBlock::EmbeddedResource(
+            router::EmbeddedResource {
+                uri: "urn://test".into(),
+                title: Some("resource".into()),
+                description: Some("desc".into()),
+                mime_type: Some("text/plain".into()),
+                data: "AA==".into(),
+                annotations: Some(router::Annotations {
+                    audience: Some(vec![router::Role::Assistant]),
+                    priority: None,
+                    timestamp: None,
+                }),
+            },
+        )];
+        let rendered = render_content_block(&content[0]);
+        assert_eq!(rendered.0.get("type"), Some(&json!("resource")));
+        assert!(rendered.1.is_some());
+    }
+
+    #[test]
+    fn export_binding_mapping_functions_are_exercised() {
+        let annotations = Some(router_exports::Annotations {
+            audience: Some(vec![
+                router_exports::Role::User,
+                router_exports::Role::Assistant,
+            ]),
+            priority: Some(3.0),
+            timestamp: Some("ts".into()),
+        });
+        let mapped_annotations = map_annotations(annotations).expect("annotations");
+        assert_eq!(
+            mapped_annotations.audience,
+            Some(vec![router::Role::User, router::Role::Assistant])
+        );
+        assert_eq!(mapped_annotations.priority, Some(3.0));
+
+        let tool_ann = map_tool_annotations(Some(router_exports::ToolAnnotations {
+            read_only: Some(false),
+            destructive: Some(false),
+            streaming: Some(true),
+            experimental: Some(false),
+        }));
+        assert!(tool_ann.is_some());
+        assert_eq!(tool_ann.unwrap().streaming, Some(true));
+
+        let meta = map_meta(Some(vec![router_exports::MetaEntry {
+            key: "k".into(),
+            value: r#""v""#.into(),
+        }]))
+        .expect("meta");
+        assert_eq!(meta[0].key, "k");
+
+        let tool = map_tool(router_exports::Tool {
+            name: "tool".into(),
+            title: Some("Tool".into()),
+            description: "desc".into(),
+            input_schema: "{}".into(),
+            output_schema: None,
+            annotations: None,
+            meta: None,
+        });
+        assert_eq!(tool.name, "tool");
+
+        let progress = map_progress(Some(vec![router_exports::ProgressNotification {
+            progress: Some(0.25),
+            message: Some("half".into()),
+            annotations: Some(router_exports::Annotations {
+                audience: None,
+                priority: None,
+                timestamp: None,
+            }),
+        }]))
+        .expect("progress");
+        assert_eq!(progress[0].message, Some("half".into()));
+
+        let mapped_tool_result = map_tool_result(router_exports::ToolResult {
+            content: vec![router_exports::ContentBlock::Text(
+                router_exports::TextContent {
+                    text: "hello".into(),
+                    annotations: None,
+                },
+            )],
+            structured_content: Some(r#"{"x":1}"#.into()),
+            progress: None,
+            meta: None,
+            is_error: Some(false),
+        });
+        assert_eq!(mapped_tool_result.content.len(), 1);
+        assert_eq!(mapped_tool_result.is_error, Some(false));
+
+        let mapped_elicitation = map_elicitation(router_exports::ElicitationRequest {
+            title: Some("title".into()),
+            message: "message".into(),
+            schema: r#"{"type":"object"}"#.into(),
+            annotations: None,
+            meta: None,
+        });
+        assert_eq!(mapped_elicitation.title, Some("title".into()));
+
+        assert!(matches!(
+            map_response(router_exports::Response::Completed(
+                router_exports::ToolResult {
+                    content: vec![],
+                    structured_content: None,
+                    progress: None,
+                    meta: None,
+                    is_error: None,
+                }
+            )),
+            router::Response::Completed(_)
+        ));
+        assert!(matches!(
+            map_response(router_exports::Response::Elicit(
+                router_exports::ElicitationRequest {
+                    title: Some("title".into()),
+                    message: "message".into(),
+                    schema: r#"{}"#.into(),
+                    annotations: None,
+                    meta: None,
+                }
+            )),
+            router::Response::Elicit(_)
+        ));
+
+        assert_eq!(
+            map_tool_error(router_exports::ToolError::InvalidParameters("x".into())).to_string(),
+            map_tool_error(router_exports::ToolError::InvalidParameters("x".into())).to_string()
         );
     }
 

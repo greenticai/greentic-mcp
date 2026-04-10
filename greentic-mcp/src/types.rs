@@ -107,6 +107,66 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn maps_tool_ref_fields() {
+        let tool = ToolRef {
+            name: "echo".into(),
+            component: "comp.wasm".into(),
+            entry: "tool-invoke".into(),
+            timeout_ms: Some(250),
+            max_retries: Some(3),
+            retry_backoff_ms: Some(50),
+        };
+
+        assert_eq!(tool.component_path(), PathBuf::from("comp.wasm"));
+        assert_eq!(tool.timeout(), Some(Duration::from_millis(250)));
+        assert_eq!(tool.max_retries(), 3);
+        assert_eq!(tool.retry_backoff(), Duration::from_millis(50));
+    }
+
+    #[test]
+    fn defaults_apply_for_optional_tool_fields() {
+        let tool = ToolRef {
+            name: "echo".into(),
+            component: "comp.wasm".into(),
+            entry: "tool-invoke".into(),
+            timeout_ms: None,
+            max_retries: None,
+            retry_backoff_ms: None,
+        };
+
+        assert!(tool.timeout().is_none());
+        assert_eq!(tool.max_retries(), 0);
+        assert_eq!(tool.retry_backoff(), Duration::from_millis(200));
+    }
+
+    #[test]
+    fn tool_output_deserialize_structured_content() {
+        let value = json!({
+            "payload": {"message": "ok"},
+            "structuredContent": {"result": "structured"}
+        });
+
+        let output: ToolOutput = serde_json::from_value(value).expect("deserialize");
+        assert_eq!(
+            output.structured_content.as_ref().map(Value::to_string),
+            Some("{\"result\":\"structured\"}".to_string())
+        );
+        assert_eq!(
+            output.payload.get("message").and_then(Value::as_str),
+            Some("ok")
+        );
+    }
+
+    #[test]
+    fn error_display_rounds_trips() {
+        let err = McpError::tool_not_found("echo");
+        assert_eq!(err.to_string(), "tool `echo` not found");
+
+        let err = McpError::InvalidInput("invalid input".into());
+        assert_eq!(err.to_string(), "invalid input: invalid input");
+    }
+
+    #[test]
     fn captures_structured_content_in_output() {
         let value = json!({
             "payload": {"message": "ok"},

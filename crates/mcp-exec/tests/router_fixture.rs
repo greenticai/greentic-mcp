@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use greentic_mcp_exec::{ExecConfig, ExecRequest, RuntimePolicy, ToolStore, VerifyPolicy};
@@ -26,6 +26,37 @@ fn target_installed() -> bool {
         .unwrap_or(false)
 }
 
+fn router_echo_wasm_path(crate_dir: &Path) -> PathBuf {
+    let artifact = PathBuf::from("wasm32-wasip2/release/router_echo.wasm");
+    let target_roots = [
+        std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from),
+        Some(crate_dir.join("target")),
+        Some(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("target"),
+        ),
+    ];
+
+    target_roots
+        .into_iter()
+        .flatten()
+        .map(|root| root.join(&artifact))
+        .find(|path| path.exists())
+        .unwrap_or_else(|| {
+            std::env::var_os("CARGO_TARGET_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("..")
+                        .join("..")
+                        .join("target")
+                })
+                .join(artifact)
+        })
+}
+
 fn build_router_echo() -> Option<PathBuf> {
     if !target_installed() {
         eprintln!("Skipping router fixture test; wasm32-wasip2 target not installed");
@@ -41,7 +72,16 @@ fn build_router_echo() -> Option<PathBuf> {
 
     match status {
         Ok(status) if status.success() => {
-            Some(crate_dir.join("target/wasm32-wasip2/release/router_echo.wasm"))
+            let path = router_echo_wasm_path(&crate_dir);
+            if path.exists() {
+                Some(path)
+            } else {
+                eprintln!(
+                    "Skipping router fixture test; built artifact missing: {}",
+                    path.display()
+                );
+                None
+            }
         }
         _ => {
             eprintln!("Skipping router fixture test; build failed");

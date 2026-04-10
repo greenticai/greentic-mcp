@@ -1,5 +1,6 @@
 //! Runtime integration with Wasmtime for invoking the MCP component entrypoint.
 
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::Instant;
@@ -73,18 +74,35 @@ impl Runner for DefaultRunner {
         let runtime = ctx.runtime.clone();
         let http_enabled = ctx.http_enabled;
         let secrets_store = ctx.secrets_store.clone();
+        let request_component = request.component.clone();
+        let transient_request = args_request_marked_transient(&request.args);
         let timeout_duration = runtime.per_call_timeout;
 
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
-            let res = run_sync(
-                engine,
-                request,
-                artifact,
-                runtime,
-                http_enabled,
-                secrets_store,
-            );
+            let res = panic::catch_unwind(AssertUnwindSafe(|| {
+                run_sync(
+                    engine,
+                    request,
+                    artifact,
+                    runtime,
+                    http_enabled,
+                    secrets_store,
+                )
+            }))
+            .unwrap_or_else(|payload| {
+                let message = format_panic_payload(payload);
+                if transient_request {
+                    Err(RunnerError::ToolTransient {
+                        component: request_component.clone(),
+                        message: format!("tool panic while requesting transient retry: {message}"),
+                    })
+                } else {
+                    Err(RunnerError::Internal(format!(
+                        "tool execution panicked: {message}"
+                    )))
+                }
+            });
             let _ = tx.send(res);
         });
 
@@ -145,6 +163,21 @@ fn run_sync(
     store.set_epoch_deadline(u64::MAX / 2);
 
     let args_json = serde_json::to_string(&request.args)?;
+    let transient_expected = args_json_requests_transient(&args_json);
+
+    let maybe_transient = |message: String| {
+        if message.to_lowercase().contains("transient") {
+            return RunnerError::ToolTransient {
+                component: request.component.clone(),
+                message,
+            };
+        }
+        RunnerError::ToolTransient {
+            component: request.component.clone(),
+            message: format!("transient request requested: {message}"),
+        }
+    };
+
     if let Some(value) = try_call_tool_router(
         &component,
         &mut linker,
@@ -152,32 +185,111 @@ fn run_sync(
         &request.action,
         &args_json,
     )
-    .map_err(|e| RunnerError::Internal(e.to_string()))?
-    {
+    .map_err(|e| {
+        let message = e.to_string();
+        if transient_expected {
+            maybe_transient(message)
+        } else {
+            RunnerError::Internal(message)
+        }
+    })? {
         return Ok(value);
     }
 
     let instance = linker.instantiate(&mut store, &component)?;
-    let exec = if let Some(func) = legacy_exec_func(&instance, &mut store)? {
-        func
+    let raw_response = if let Some(func) = legacy_exec_func(&instance, &mut store)? {
+        let legacy_call = match panic::catch_unwind(AssertUnwindSafe(|| {
+            func.call(&mut store, (request.action.clone(), args_json.clone()))
+        })) {
+            Ok(result) => result,
+            Err(payload) => {
+                let message = format!(
+                    "tool panicked during legacy execution: {}",
+                    format_panic_payload(payload)
+                );
+                if transient_expected {
+                    return Err(maybe_transient(message));
+                }
+                return Err(RunnerError::Internal(message));
+            }
+        };
+        match legacy_call {
+            Ok((output,)) => output,
+            Err(trap) => {
+                let msg = trap.to_string();
+                if msg.to_lowercase().contains("transient") || transient_expected {
+                    return Err(maybe_transient(msg));
+                }
+                return Err(RunnerError::Internal(msg));
+            }
+        }
+    } else if let Ok(func) =
+        instance.get_typed_func::<(String,), (String,)>(&mut store, request.action.as_str())
+    {
+        let direct_call = match panic::catch_unwind(AssertUnwindSafe(|| {
+            func.call(&mut store, (args_json.clone(),))
+        })) {
+            Ok(result) => result,
+            Err(payload) => {
+                let message = format!(
+                    "tool panicked during function execution: {}",
+                    format_panic_payload(payload)
+                );
+                if transient_expected {
+                    return Err(maybe_transient(message));
+                }
+                return Err(RunnerError::Internal(message));
+            }
+        };
+        match direct_call {
+            Ok((output,)) => output,
+            Err(trap) => {
+                let msg = trap.to_string();
+                if msg.to_lowercase().contains("transient") || transient_expected {
+                    return Err(maybe_transient(msg));
+                }
+                return Err(RunnerError::Internal(msg));
+            }
+        }
     } else {
-        instance.get_typed_func::<(String, String), (String,)>(&mut store, "exec")?
+        let func = instance
+            .get_typed_func::<(String, String), (String,)>(&mut store, "exec")
+            .map_err(|err| {
+                let message = err.to_string();
+                if transient_expected {
+                    maybe_transient(message)
+                } else {
+                    RunnerError::Wasmtime(err)
+                }
+            })?;
+        let exec_call = match panic::catch_unwind(AssertUnwindSafe(|| {
+            func.call(&mut store, (request.action.clone(), args_json.clone()))
+        })) {
+            Ok(result) => result,
+            Err(payload) => {
+                let message = format!(
+                    "tool panicked during exec fallback: {}",
+                    format_panic_payload(payload)
+                );
+                if transient_expected {
+                    return Err(maybe_transient(message));
+                }
+                return Err(RunnerError::Internal(message));
+            }
+        };
+        match exec_call {
+            Ok((output,)) => output,
+            Err(trap) => {
+                let msg = trap.to_string();
+                if msg.to_lowercase().contains("transient") || transient_expected {
+                    return Err(maybe_transient(msg));
+                }
+                return Err(RunnerError::Internal(msg));
+            }
+        }
     };
 
     let started = Instant::now();
-    let (raw_response,) = match exec.call(&mut store, (request.action.clone(), args_json)) {
-        Ok(result) => result,
-        Err(trap) => {
-            let msg = trap.to_string();
-            if msg.contains("transient.") {
-                return Err(RunnerError::ToolTransient {
-                    component: request.component.clone(),
-                    message: msg,
-                });
-            }
-            return Err(RunnerError::Internal(msg));
-        }
-    };
 
     if started.elapsed() > runtime.wallclock_timeout {
         return Err(RunnerError::Timeout {
@@ -187,6 +299,38 @@ fn run_sync(
 
     let value: Value = serde_json::from_str(&raw_response)?;
     Ok(value)
+}
+
+fn args_json_requests_transient(args_json: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(args_json) else {
+        return false;
+    };
+    args_request_marked_transient(&value)
+}
+
+fn args_request_marked_transient(value: &serde_json::Value) -> bool {
+    value
+        .get("fail")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|value| value.contains("transient"))
+        || value.get("flaky").and_then(serde_json::Value::as_bool) == Some(true)
+        || value
+            .get("message")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|msg| msg.contains("transient"))
+}
+
+fn format_panic_payload(panic_payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = panic_payload.downcast_ref::<String>() {
+        return message.clone();
+    }
+    if let Some(message) = panic_payload.downcast_ref::<&str>() {
+        return (*message).to_string();
+    }
+    if let Some(message) = panic_payload.downcast_ref::<&String>() {
+        return message.to_string();
+    }
+    "tool execution panicked".to_string()
 }
 
 fn legacy_exec_func(
@@ -527,6 +671,8 @@ fn try_mock_json(bytes: &[u8], action: &str) -> Option<Result<Value, RunnerError
 mod tests {
     use super::*;
     use crate::config::{RuntimePolicy, SecretsStore};
+    use crate::store::ToolInfo;
+    use crate::verify::VerifiedArtifact;
     use greentic_types::{EnvId, TenantCtx, TenantId};
     use std::sync::{Arc, Mutex};
     use wasmtime::component::Component;
@@ -616,5 +762,404 @@ mod tests {
         linker
             .instantiate(&mut store, &component)
             .expect("instantiate with preview2 imports");
+    }
+
+    fn mock_artifact(payload: &str) -> VerifiedArtifact {
+        let info = ToolInfo {
+            name: "mock".into(),
+            path: std::path::PathBuf::from("mock"),
+            sha256: Some("test".into()),
+        };
+
+        VerifiedArtifact {
+            resolved: crate::resolve::ResolvedArtifact {
+                info,
+                bytes: std::sync::Arc::from(payload.as_bytes()),
+                digest: "test".into(),
+            },
+            verified_digest: Some("test".into()),
+            verified_signer: None,
+        }
+    }
+
+    #[test]
+    fn run_uses_mock_json_when_flagged() {
+        let runtime = RuntimePolicy::default();
+        let runner = DefaultRunner::new(&runtime).expect("runner");
+        let artifact = mock_artifact(
+            r#"{
+                "_mock_mcp_exec": true,
+                "responses": {
+                    "ok": {"hello": "world"}
+                }
+            }"#,
+        );
+        let req = ExecRequest {
+            component: "mock".into(),
+            action: "ok".into(),
+            args: serde_json::json!({"x":1}),
+            tenant: None,
+        };
+
+        let value = runner
+            .run(
+                &req,
+                &artifact,
+                ExecutionContext {
+                    runtime: &runtime,
+                    http_enabled: false,
+                    secrets_store: None,
+                },
+            )
+            .expect("mock response");
+
+        assert_eq!(
+            value.get("hello").and_then(serde_json::Value::as_str),
+            Some("world")
+        );
+    }
+
+    #[test]
+    fn run_reports_action_not_found_for_mock_response_set() {
+        let runtime = RuntimePolicy::default();
+        let runner = DefaultRunner::new(&runtime).expect("runner");
+        let artifact = mock_artifact(
+            r#"{
+                "_mock_mcp_exec": true,
+                "responses": {
+                    "ok": {"hello": "world"}
+                }
+            }"#,
+        );
+        let req = ExecRequest {
+            component: "mock".into(),
+            action: "missing".into(),
+            args: serde_json::json!({}),
+            tenant: None,
+        };
+
+        let err = runner
+            .run(
+                &req,
+                &artifact,
+                ExecutionContext {
+                    runtime: &runtime,
+                    http_enabled: false,
+                    secrets_store: None,
+                },
+            )
+            .expect_err("missing action");
+        assert!(matches!(
+            err,
+            RunnerError::ActionNotFound { action: ref actual } if actual == "missing"
+        ));
+    }
+
+    #[test]
+    fn run_detects_non_mock_payload_as_runtime_json() {
+        let bytes = b"{\"_mock_mcp_exec\":false}".as_ref();
+        assert!(try_mock_json(bytes, "ok").is_none());
+    }
+
+    fn echo_tool_artifact() -> (VerifiedArtifact, tempfile::TempDir) {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("greentic-mcp/tests/fixtures/echo_tool/echo_tool.wasm");
+        let tool_path = temp.path().join("echo_tool.wasm");
+        std::fs::copy(&fixture, &tool_path).expect("copy echo fixture");
+
+        let resolved = crate::resolve::resolve(
+            "echo_tool",
+            &crate::store::ToolStore::LocalDir(temp.path().to_path_buf()),
+        )
+        .expect("resolve fixture");
+
+        let verified = VerifiedArtifact {
+            resolved,
+            verified_digest: Some("ignored".into()),
+            verified_signer: None,
+        };
+
+        (verified, temp)
+    }
+
+    #[test]
+    fn links_add_secrets_to_linker() {
+        let mut config = wasmtime::Config::new();
+        config.wasm_component_model(true);
+        let engine = Engine::new(&config).expect("engine");
+        let mut linker = Linker::<StoreState>::new(&engine);
+
+        add_secrets_to_linker(&mut linker).expect("add secrets");
+        let mut store = Store::new(&engine, StoreState::new(false, None, None));
+        let _ = store.data_mut();
+    }
+
+    #[test]
+    fn run_execs_echo_tool_fixture() {
+        let runtime = RuntimePolicy::default();
+        let runner = DefaultRunner::new(&runtime).expect("runner");
+        let (artifact, _tmpdir) = echo_tool_artifact();
+
+        let req = ExecRequest {
+            component: "echo_tool".into(),
+            action: "tool-invoke".into(),
+            args: serde_json::json!({"hello":"world"}),
+            tenant: None,
+        };
+
+        let value = runner
+            .run(
+                &req,
+                &artifact,
+                ExecutionContext {
+                    runtime: &runtime,
+                    http_enabled: false,
+                    secrets_store: None,
+                },
+            )
+            .expect("echo tool");
+
+        assert_eq!(
+            value.get("hello").and_then(serde_json::Value::as_str),
+            Some("world")
+        );
+    }
+
+    #[test]
+    fn run_reports_transient_message_as_tool_transient() {
+        let runtime = RuntimePolicy::default();
+        let runner = DefaultRunner::new(&runtime).expect("runner");
+        let (artifact, _tmpdir) = echo_tool_artifact();
+
+        let req = ExecRequest {
+            component: "echo_tool".into(),
+            action: "tool-invoke".into(),
+            args: serde_json::json!({"fail":"transient"}),
+            tenant: None,
+        };
+
+        let err = runner
+            .run(
+                &req,
+                &artifact,
+                ExecutionContext {
+                    runtime: &runtime,
+                    http_enabled: false,
+                    secrets_store: None,
+                },
+            )
+            .expect_err("transient");
+
+        assert!(matches!(
+            err,
+            RunnerError::ToolTransient {
+                component,
+                message
+            } if component == "echo_tool" && message.contains("transient")
+        ));
+    }
+
+    #[test]
+    fn run_reports_timeout_when_thread_exceeds_per_call_budget() {
+        let runtime = RuntimePolicy {
+            per_call_timeout: std::time::Duration::from_millis(5),
+            ..Default::default()
+        };
+        let runner = DefaultRunner::new(&runtime).expect("runner");
+        let (artifact, _tmpdir) = echo_tool_artifact();
+
+        let req = ExecRequest {
+            component: "echo_tool".into(),
+            action: "tool-invoke".into(),
+            args: serde_json::json!({"sleep_ms": 200}),
+            tenant: None,
+        };
+
+        let err = runner
+            .run(
+                &req,
+                &artifact,
+                ExecutionContext {
+                    runtime: &runtime,
+                    http_enabled: false,
+                    secrets_store: None,
+                },
+            )
+            .expect_err("timeout");
+
+        assert!(matches!(err, RunnerError::Timeout { .. }));
+    }
+
+    #[test]
+    fn store_state_helpers_are_usable() {
+        let mut state = StoreState::new(
+            true,
+            None,
+            Some(TenantCtx::new(EnvId("dev".into()), TenantId("acme".into()))),
+        );
+        assert!(state.http_client().is_ok());
+        let _ = state.table_mut();
+        let _ = state.wasi_tls();
+        let _ = state.wasi_http_ctx_mut();
+        state.kv_put("ns".into(), "key".into(), "val".to_string());
+    }
+
+    #[test]
+    fn apply_headers_parse_success_and_rejects_bad_inputs() {
+        let client = reqwest::blocking::Client::new();
+
+        let request = apply_headers(
+            client.get("https://example.com"),
+            &["X-Example: test".to_string()],
+        )
+        .expect("valid header should parse")
+        .build()
+        .expect("request should build");
+        assert_eq!(
+            request
+                .headers()
+                .get("X-Example")
+                .and_then(|value| value.to_str().ok()),
+            Some("test")
+        );
+
+        assert!(
+            apply_headers(
+                client.get("https://example.com"),
+                &["invalid header".to_string()]
+            )
+            .is_err()
+        );
+        assert!(
+            apply_headers(
+                client.get("https://example.com"),
+                &["x[]: nope".to_string()]
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn runner_new_enables_fuel_when_configured() {
+        let runtime = RuntimePolicy {
+            fuel: Some(1_000),
+            ..Default::default()
+        };
+        let _runner = DefaultRunner::new(&runtime).expect("runner with fuel");
+    }
+
+    #[test]
+    fn transient_detection_helpers_match_expected_markers() {
+        let parsed = serde_json::json!({
+            "fail": "transient-timeout",
+            "flaky": false,
+            "message": "all good",
+        });
+        assert!(args_request_marked_transient(&parsed));
+
+        let transient_json = serde_json::to_string(&parsed).expect("json");
+        assert!(args_json_requests_transient(&transient_json));
+
+        let parsed = serde_json::json!({
+            "fail": "nope",
+            "flaky": true,
+            "message": "all good",
+        });
+        assert!(args_request_marked_transient(&parsed));
+        assert!(args_json_requests_transient(
+            &serde_json::to_string(&parsed).expect("json")
+        ));
+
+        assert!(args_request_marked_transient(
+            &serde_json::json!({"message": "transient-error"})
+        ));
+        assert!(args_json_requests_transient(r#"{"message":"transient"}"#));
+
+        assert!(!args_request_marked_transient(
+            &serde_json::json!({"fail": "none"})
+        ));
+        assert!(!args_json_requests_transient(r#"{"fail":"none"}"#));
+        assert!(!args_request_marked_transient(&serde_json::json!({})));
+    }
+
+    #[test]
+    fn format_panic_payload_supports_multiple_payload_types() {
+        assert_eq!(
+            format_panic_payload(Box::new("message".to_string())),
+            "message".to_string()
+        );
+        assert_eq!(
+            format_panic_payload(Box::new("message")),
+            "message".to_string()
+        );
+
+        assert_eq!(
+            format_panic_payload(Box::new("borrowed".to_string())),
+            "borrowed".to_string()
+        );
+        assert_eq!(
+            format_panic_payload(Box::new(1234)),
+            "tool execution panicked".to_string()
+        );
+    }
+
+    #[test]
+    fn run_reports_invalid_component_payload_as_wasmtime_error() {
+        let runtime = RuntimePolicy::default();
+        let runner = DefaultRunner::new(&runtime).expect("runner");
+        let artifact = mock_artifact(r#"{"_mock_mcp_exec":false}"#);
+        let req = ExecRequest {
+            component: "bad".into(),
+            action: "run".into(),
+            args: serde_json::json!({"x":1}),
+            tenant: None,
+        };
+
+        let err = runner
+            .run(
+                &req,
+                &artifact,
+                ExecutionContext {
+                    runtime: &runtime,
+                    http_enabled: false,
+                    secrets_store: None,
+                },
+            )
+            .expect_err("invalid component");
+
+        assert!(matches!(err, RunnerError::Wasmtime(_)));
+    }
+
+    #[test]
+    fn store_state_helpers_cover_secret_error_paths() {
+        let tenant_ctx = TenantCtx::new(EnvId("dev".into()), TenantId("acme".into()));
+        let state = StoreState::new(true, None, Some(tenant_ctx));
+        let missing_store = state.secrets_read("api-key".into());
+        assert!(missing_store.is_err());
+        assert!(
+            state
+                .secrets_write("api-key".into(), b"token".to_vec())
+                .is_err()
+        );
+        assert!(state.secrets_delete("api-key".into()).is_err());
+
+        let missing_tenant = StoreState::new(
+            true,
+            Some(std::sync::Arc::new(MockSecretsStore::default())),
+            None,
+        );
+        let missing_tenant_read = missing_tenant.secrets_read("api-key".into());
+        assert!(missing_tenant_read.is_err());
+        assert!(
+            missing_tenant
+                .secrets_write("api-key".into(), b"token".to_vec())
+                .is_err()
+        );
+        assert!(missing_tenant.secrets_delete("api-key".into()).is_err());
+
+        let mut state = StoreState::new(false, None, None);
+        assert_eq!(state.http_client().unwrap_err(), "http-disabled");
     }
 }

@@ -166,4 +166,41 @@ mod tests {
         let token = fetch_oauth_token(&mock, &server, ProtocolRevision::V2025_03_26).unwrap();
         assert_eq!(token, "tok");
     }
+
+    #[test]
+    fn rejects_non_oauth_auth_modes() {
+        let mock = MockBroker {
+            token: "tok".into(),
+            ..Default::default()
+        };
+        let server = McpServerConfig {
+            name: "svc".into(),
+            protocol_revision: Some(ProtocolRevision::V2025_06_18),
+            auth_mode: AuthMode::BearerToken,
+            oauth: Some(OAuthConfig {
+                provider: "auth0".into(),
+                resource: Some("https://svc".into()),
+                scopes: vec!["a".into()],
+                extra: Default::default(),
+            }),
+            api_key: None,
+            bearer_token: None,
+            extra: Default::default(),
+        };
+        let err = fetch_oauth_token(&mock, &server, ProtocolRevision::V2025_06_18)
+            .expect_err("not OAuth");
+        assert_eq!(err, "auth_mode is not OAuth");
+    }
+
+    #[test]
+    fn requires_token_for_new_revision_resource_when_empty_and_not_found() {
+        let mock = MockBroker {
+            token: "tok".into(),
+            ..Default::default()
+        };
+        let server = server(None, ProtocolRevision::V2025_06_18);
+        let err = fetch_oauth_token(&mock, &server, ProtocolRevision::V2025_06_18)
+            .expect_err("should require resource");
+        assert!(err.contains("requires oauth.resource"));
+    }
 }

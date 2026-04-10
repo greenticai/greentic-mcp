@@ -223,3 +223,107 @@ fn download_once(client: &reqwest::blocking::Client, url: &str, dest: &Path) -> 
     fs::rename(&tmp, dest).with_context(|| format!("moving into {}", dest.display()))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::resolve;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn list_dir_without_root_returns_empty() {
+        let root = tempdir().expect("tmp root");
+        let store = ToolStore::LocalDir(root.path().into());
+        let tools = store.list().expect("list");
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn list_local_finds_wasm_files_sorted() {
+        let root = tempdir().expect("tmp root");
+        fs::write(root.path().join("z.wasm"), b"z").unwrap();
+        fs::write(root.path().join("a.wasm"), b"a").unwrap();
+        fs::write(root.path().join("ignore.txt"), b"x").unwrap();
+
+        let store = ToolStore::LocalDir(root.path().into());
+        let tools = store.list().expect("list");
+        let names: Vec<_> = tools.iter().map(|t| &t.name).collect();
+        assert_eq!(names, vec!["a", "z"]);
+    }
+
+    #[test]
+    fn fetch_local_returns_matching_tool() {
+        let root = tempdir().expect("tmp root");
+        let wasm_path = root.path().join("tool.wasm");
+        fs::write(&wasm_path, b"component").unwrap();
+
+        let store = ToolStore::LocalDir(root.path().into());
+        let info = store.fetch("tool").expect("fetch");
+        assert_eq!(info.name, "tool");
+        assert_eq!(info.path, wasm_path);
+        assert!(info.sha256.is_some());
+    }
+
+    #[test]
+    fn fetch_local_reports_missing_tool() {
+        let root = tempdir().expect("tmp root");
+        let store = ToolStore::LocalDir(root.path().into());
+        let err = store.fetch("missing").expect_err("should miss");
+        assert!(is_not_found(&err));
+    }
+
+    #[test]
+    fn fetch_http_rejects_wrong_name() {
+        let root = tempdir().expect("cache root");
+        let err = fetch_http(
+            "expected",
+            "https://example.com/x.wasm",
+            root.path(),
+            "other",
+        )
+        .expect_err("wrong tool should fail");
+        assert!(is_not_found(&err));
+    }
+
+    #[test]
+    fn fetch_http_uses_cached_file_if_present() {
+        let root = tempdir().expect("cache root");
+        let store = ToolStore::HttpSingleFile {
+            name: "expected".into(),
+            url: "https://example.com/x.wasm".into(),
+            cache_dir: root.path().into(),
+        };
+
+        let cached = root.path().join("expected.wasm");
+        fs::write(&cached, b"cached fixture").unwrap();
+        let info = store.fetch("expected").expect("fetch");
+        assert_eq!(info.path, cached);
+        assert!(info.sha256.is_some());
+    }
+
+    #[test]
+    fn compute_sha256_stable_for_fixture() {
+        let root = tempdir().expect("tmp root");
+        let file = root.path().join("one.wasm");
+        fs::write(&file, b"abc").unwrap();
+        assert_eq!(
+            compute_sha256(&file).expect("digest"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_string()
+        );
+    }
+
+    #[test]
+    fn resolve_tool_is_consistent_with_local_store_listing() {
+        let root = tempdir().expect("tmp root");
+        let wasm = root.path().join("roundtrip.wasm");
+        fs::write(&wasm, b"wasm").unwrap();
+
+        let info = resolve::resolve("roundtrip", &ToolStore::LocalDir(root.path().into()))
+            .expect("resolve");
+        assert_eq!(info.info.name, "roundtrip");
+        assert_eq!(info.info.path, wasm);
+        assert_eq!(info.bytes, std::fs::read(&wasm).unwrap().into());
+        assert!(!info.digest.is_empty());
+    }
+}

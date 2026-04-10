@@ -37,3 +37,81 @@ impl ToolMap {
         self.tools.iter()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicates_are_rejected() {
+        let config = ToolMapConfig {
+            tools: vec![
+                ToolRef {
+                    name: "echo".into(),
+                    component: "a".into(),
+                    entry: "tool-invoke".into(),
+                    timeout_ms: None,
+                    max_retries: None,
+                    retry_backoff_ms: None,
+                },
+                ToolRef {
+                    name: "echo".into(),
+                    component: "b".into(),
+                    entry: "tool-invoke".into(),
+                    timeout_ms: None,
+                    max_retries: None,
+                    retry_backoff_ms: None,
+                },
+            ],
+        };
+        let err = ToolMap::from_config(&config).expect_err("duplicate should fail");
+        assert!(err.to_string().contains("duplicate tool name"));
+    }
+
+    #[test]
+    fn get_returns_expected_tool_or_error() {
+        let config = ToolMapConfig {
+            tools: vec![ToolRef {
+                name: "echo".into(),
+                component: "a".into(),
+                entry: "tool-invoke".into(),
+                timeout_ms: Some(100),
+                max_retries: Some(1),
+                retry_backoff_ms: None,
+            }],
+        };
+        let map = ToolMap::from_config(&config).expect("map");
+        let echo = map.get("echo").expect("found");
+        assert_eq!(echo.name, "echo");
+
+        let missing = map.get("missing").expect_err("not found");
+        assert!(missing.to_string().contains("tool `missing` not found"));
+    }
+
+    #[test]
+    fn iter_preserves_map_order() {
+        let config = ToolMapConfig {
+            tools: vec![
+                ToolRef {
+                    name: "a".into(),
+                    component: "a".into(),
+                    entry: "tool-invoke".into(),
+                    timeout_ms: None,
+                    max_retries: None,
+                    retry_backoff_ms: None,
+                },
+                ToolRef {
+                    name: "b".into(),
+                    component: "b".into(),
+                    entry: "tool-invoke".into(),
+                    timeout_ms: None,
+                    max_retries: None,
+                    retry_backoff_ms: None,
+                },
+            ],
+        };
+        let map = ToolMap::from_config(&config).expect("map");
+        let names: Vec<_> = map.iter().map(|(_, tool)| tool.name.clone()).collect();
+        assert_eq!(names, vec!["a".to_string(), "b".to_string()]);
+    }
+}
