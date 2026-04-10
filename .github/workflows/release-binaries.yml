@@ -2,9 +2,6 @@ name: Release binaries (binstall)
 
 on:
   workflow_call:
-  push:
-    tags:
-      - "v*"
 
 permissions:
   contents: write
@@ -38,19 +35,6 @@ jobs:
         with:
           toolchain: 1.91.0
           targets: ${{ matrix.target }}
-      - name: Ensure tag matches cargo workspace version
-        shell: bash
-        run: |
-          set -euox pipefail
-          local_version=$(cargo metadata --format-version 1 --no-deps \
-            | jq -r '.packages[] | select(.name=="greentic-mcp") | .version')
-          tag_name="${GITHUB_REF_NAME}"
-          expected_tag="v${local_version}"
-          if [[ "$tag_name" != "${expected_tag}" ]]; then
-            echo "::error::Release tag ${tag_name} does not match cargo workspace version ${local_version}"
-            echo "::error::Expected release tag ${expected_tag}"
-            exit 1
-          fi
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: greentic-mcp
