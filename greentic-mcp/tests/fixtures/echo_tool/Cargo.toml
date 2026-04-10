@@ -5,8 +5,8 @@ edition = "2021"
 publish = false
 description = "Test fixture for greentic-mcp; not intended for crates.io"
 license = "MIT"
-repository = "https://github.com/agentic/greentic-mcp"
-homepage = "https://github.com/agentic/greentic-mcp"
+repository = "https://github.com/greenticai/greentic-mcp"
+homepage = "https://github.com/greenticai/greentic-mcp"
 
 [lib]
 crate-type = ["cdylib"]
