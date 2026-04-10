@@ -4,8 +4,16 @@ version.workspace = true
 edition = "2024"
 license = "MIT"
 description = "MCP ToolMap + WASIX/WASI executor bridge"
-repository = "https://github.com/agentic/greentic-mcp"
+repository = "https://github.com/greenticai/greentic-mcp"
+homepage = "https://github.com/greenticai/greentic-mcp"
 readme = "README.md"
+keywords = ["greentic", "mcp", "wasm", "wasi"]
+categories = ["command-line-utilities", "wasm"]
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/greentic-mcp-v{ version }-{ target }.tgz"
+pkg-fmt = "tgz"
+bin-dir = "greentic-mcp-v{ version }-{ target }/{ bin }{ binary-ext }"
 
 [lib]
 name = "greentic_mcp"
