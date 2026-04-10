@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.release_tag.outputs.tag }}
+      version: ${{ steps.release_tag.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -33,17 +34,13 @@ jobs:
           set -euo pipefail
           version=$(cargo metadata --format-version 1 --no-deps \
             | jq -r '.packages[] | select(.name=="greentic-mcp") | .version')
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
 
-  release-binaries:
-    needs: release-tag
-    uses: ./.github/workflows/release-binaries.yml
-    with:
-      release_tag: ${{ needs.release-tag.outputs.tag }}
-    secrets: inherit
-
   publish:
-    needs: [ci, release-binaries]
+    outputs:
+      publish: ${{ steps.check.outputs.publish }}
+    needs: [ci]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -90,3 +87,13 @@ jobs:
           ignore-unpublished-changes: true   # succeed when nothing to publish
           check-repo: true                   # verify real version bumps
           dry-run: false
+
+  release-binaries:
+    if: needs.publish.outputs.publish == 'true'
+    needs: [publish, release-tag]
+    uses: ./.github/workflows/release-binaries.yml
+    with:
+      release_tag: ${{ needs.release-tag.outputs.tag }}
+      release_version: ${{ needs.release-tag.outputs.version }}
+      publish_changed: ${{ needs.publish.outputs.publish }}
+    secrets: inherit
