@@ -559,7 +559,7 @@ fn default_arguments() -> Value {
 mod tests {
     use super::*;
     use std::cell::RefCell;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
     use wasmtime::component::Linker;
     use wasmtime::{Engine, Store};
@@ -832,6 +832,36 @@ mod tests {
             .unwrap_or(false)
     }
 
+    fn router_echo_wasm_path(crate_dir: &Path) -> PathBuf {
+        let artifact = PathBuf::from("wasm32-wasip2/release/router_echo.wasm");
+
+        let target_roots = [
+            std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from),
+            Some(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../..")
+                    .join("target"),
+            ),
+            Some(crate_dir.join("target")),
+        ];
+
+        target_roots
+            .into_iter()
+            .flatten()
+            .map(|root| root.join(&artifact))
+            .find(|path| path.exists())
+            .unwrap_or_else(|| {
+                std::env::var_os("CARGO_TARGET_DIR")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| {
+                        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                            .join("../..")
+                            .join("target")
+                    })
+                    .join(artifact)
+            })
+    }
+
     fn build_router_echo() -> Option<PathBuf> {
         if !target_installed() {
             eprintln!(
@@ -849,9 +879,7 @@ mod tests {
             .status();
 
         match status {
-            Ok(status) if status.success() => {
-                Some(crate_dir.join("target/wasm32-wasip2/release/router_echo.wasm"))
-            }
+            Ok(status) if status.success() => Some(router_echo_wasm_path(&crate_dir)),
             _ => {
                 eprintln!("Skipping adapter/router composition test; router build failed");
                 None
