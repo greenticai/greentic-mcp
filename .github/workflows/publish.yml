@@ -5,6 +5,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Keep this workflow easy to retrigger via a minimal follow-up PR when needed.
 permissions:
   contents: write
 
