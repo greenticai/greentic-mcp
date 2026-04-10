@@ -37,20 +37,16 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
 
-  publish:
+  release-plan:
+    needs: [ci, release-tag]
+    runs-on: ubuntu-latest
     outputs:
       publish: ${{ steps.check.outputs.publish }}
-    needs: [ci]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.91.0
-      - uses: Swatinem/rust-cache@v2
       - name: Check crates.io versions (skip if already published)
         id: check
         run: |
@@ -77,9 +73,30 @@ jobs:
           done
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
 
-      # Idempotent crates.io publish: only publishes when versions changed.
+  release-binaries:
+    if: needs.release-plan.outputs.publish == 'true'
+    needs: [release-plan, release-tag]
+    uses: ./.github/workflows/release-binaries.yml
+    with:
+      release_tag: ${{ needs.release-tag.outputs.tag }}
+      release_version: ${{ needs.release-tag.outputs.version }}
+      publish_changed: ${{ needs.release-plan.outputs.publish }}
+    secrets: inherit
+
+  publish:
+    if: needs.release-plan.outputs.publish == 'true'
+    needs: [release-plan, release-binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.0
+      - uses: Swatinem/rust-cache@v2
       - name: Publish changed crates
-        if: steps.check.outputs.publish == 'true'
         uses: katyo/publish-crates@v2
         with:
           path: .
@@ -87,13 +104,3 @@ jobs:
           ignore-unpublished-changes: true   # succeed when nothing to publish
           check-repo: true                   # verify real version bumps
           dry-run: false
-
-  release-binaries:
-    if: needs.publish.outputs.publish == 'true'
-    needs: [publish, release-tag]
-    uses: ./.github/workflows/release-binaries.yml
-    with:
-      release_tag: ${{ needs.release-tag.outputs.tag }}
-      release_version: ${{ needs.release-tag.outputs.version }}
-      publish_changed: ${{ needs.publish.outputs.publish }}
-    secrets: inherit
