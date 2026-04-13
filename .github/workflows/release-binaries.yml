@@ -1,103 +1,33 @@
-name: Release binaries (binstall)
+name: Release Binaries
 
 on:
-  workflow_call:
-    inputs:
-      release_tag:
-        required: true
-        type: string
-      release_version:
-        required: true
-        type: string
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
 
 permissions:
   contents: write
+  packages: write
 
-# Intentional stable workflow comment to allow safe rerun PRs when release infra needs retriggering.
 concurrency:
-  group: release-binaries-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    defaults:
-      run:
-        shell: bash
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            os: macos-15
-            bin_suffix: ""
-          - target: x86_64-apple-darwin
-            os: macos-15
-            bin_suffix: ""
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-24.04-arm
-            bin_suffix: ""
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            bin_suffix: ""
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            bin_suffix: ".exe"
-          - target: aarch64-pc-windows-msvc
-            os: windows-latest
-            bin_suffix: ".exe"
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.91.0
-          targets: ${{ matrix.target }}
-      - name: Ensure target installed
-        run: rustup target add ${{ matrix.target }}
-      - name: Build release binaries
-        run: |
-          set -euo pipefail
-          cargo build --locked --release --target ${{ matrix.target }} --bin greentic-mcp
-          cargo build --locked --release --target ${{ matrix.target }} --bin greentic-mcp-exec
-      - name: Package release archive
-        id: package
-        run: |
-          set -euo pipefail
-          version="${{ inputs.release_version }}"
-          target="${{ matrix.target }}"
-          bin_suffix="${{ matrix.bin_suffix }}"
-          out_dir="target/${target}/release"
-          dist_dir="dist"
-          archive_dir="${dist_dir}/greentic-mcp-v${version}-${target}"
-          archive="${dist_dir}/greentic-mcp-v${version}-${target}.tgz"
-          checksum="${archive}.sha256"
+  release-mcp:
+    uses: greenticai/.github/.github/workflows/release-binaries.yml@main
+    with:
+      package: greentic-mcp
+      binary: greentic-mcp
+      extra-files: |
+        README.md
+    secrets: inherit
 
-          mkdir -p "${dist_dir}" "${archive_dir}"
-          cp "${out_dir}/greentic-mcp${bin_suffix}" "${archive_dir}/greentic-mcp${bin_suffix}"
-          cp "${out_dir}/greentic-mcp-exec${bin_suffix}" "${archive_dir}/greentic-mcp-exec${bin_suffix}"
-          tar -C "${dist_dir}" -czf "${archive}" "$(basename "${archive_dir}")"
-
-          ARCHIVE_PATH="${archive}" python3 - <<'PY'
-          import hashlib
-          import os
-          import pathlib
-
-          path = pathlib.Path(os.environ["ARCHIVE_PATH"])
-          digest = hashlib.sha256(path.read_bytes()).hexdigest()
-          path.with_suffix(path.suffix + ".sha256").write_text(f"{digest}  {path.name}\\n")
-          PY
-
-          echo "artifacts<<EOF" >> "$GITHUB_OUTPUT"
-          echo "${archive}" >> "$GITHUB_OUTPUT"
-          echo "${checksum}" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-      - name: Upload release artifacts
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ steps.package.outputs.artifacts }}
-          tag_name: ${{ inputs.release_tag }}
-          name: ${{ inputs.release_tag }}
-          target_commitish: ${{ github.sha }}
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  release-mcp-exec:
+    uses: greenticai/.github/.github/workflows/release-binaries.yml@main
+    with:
+      package: greentic-mcp-exec
+      binary: greentic-mcp-exec
+      extra-files: |
+        README.md
+    secrets: inherit
