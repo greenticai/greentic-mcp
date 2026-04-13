@@ -18,5 +18,5 @@ jobs:
   publish:
     uses: greenticai/.github/.github/workflows/crates-publish.yml@main
     with:
-      crates: "greentic-mcp"
+      crates: "greentic-mcp-exec greentic-mcp"
     secrets: inherit

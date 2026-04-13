@@ -14,11 +14,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  release-mcp:
     uses: greenticai/.github/.github/workflows/release-binaries.yml@main
     with:
       package: greentic-mcp
       binary: greentic-mcp
+      extra-files: |
+        README.md
+    secrets: inherit
+
+  release-mcp-exec:
+    uses: greenticai/.github/.github/workflows/release-binaries.yml@main
+    with:
+      package: greentic-mcp-exec
+      binary: greentic-mcp-exec
       extra-files: |
         README.md
     secrets: inherit
