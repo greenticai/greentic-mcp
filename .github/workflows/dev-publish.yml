@@ -18,6 +18,6 @@ jobs:
   dev-publish:
     uses: greenticai/.github/.github/workflows/dev-publish.yml@main
     with:
-      crates: "greentic-mcp"
+      crates: "greentic-mcp-exec greentic-mcp"
       exclude-crates: "greentic-mcp-adapter"
     secrets: inherit
