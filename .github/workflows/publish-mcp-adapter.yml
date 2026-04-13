@@ -2,10 +2,8 @@ name: Publish MCP Adapter
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - "v*"
+    tags: ["v*"]
+  workflow_dispatch: {}
 
 permissions:
   contents: read
