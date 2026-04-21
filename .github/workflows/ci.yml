@@ -16,9 +16,6 @@ jobs:
     uses: greenticai/.github/.github/workflows/pr-ci.yml@main
     with:
       variant: host
-      # dependency-review already runs via dependency-review.yml (which also
-      # wires the Codex remediation path); avoid duplicate runs.
-      run-dependency-review: false
 
   # Feature-flag coverage that pr-ci.yml (--all-features) doesn't exercise.
   # These two builds verify the optional describe-v1 and runner-host-v1
