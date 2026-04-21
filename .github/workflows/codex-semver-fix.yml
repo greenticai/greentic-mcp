@@ -1,0 +1,29 @@
+name: Codex Semver Fix
+on:
+  schedule:
+    # 05:09 UTC — staggered off-peak slot. See plans/binary-bifurcation.md A.4.
+    - cron: "9 5 * * *"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to scan and patch (only for manual run)"
+        required: false
+        default: ""
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semver-fix:
+    # Do not run on fork PRs to avoid passing untrusted refs into privileged
+    # remediation workflows.  Kept as defense-in-depth no-op for schedule.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    uses: greenticai/.github/.github/workflows/codex-semver-fix.yml@main
+    with:
+      branch: ${{ github.event.inputs.branch || '' }}
+      rust-version: 1.95.0
+    secrets: inherit

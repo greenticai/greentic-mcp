@@ -1,11 +1,9 @@
-name: rust-ci
-
+name: CI
 on:
   workflow_call:
   pull_request:
   schedule:
     - cron: "17 2 * * *"
-
 permissions:
   contents: read
 
@@ -14,43 +12,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  offline:
-    runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -C link-arg=-fuse-ld=bfd
-      CARGO_INCREMENTAL: 0
-      CARGO_PROFILE_DEV_DEBUG: 0
-      CARGO_PROFILE_TEST_DEBUG: 0
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.95.0
-        with:
-          toolchain: 1.91.0
-          components: clippy, rustfmt
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo clean
-      - run: cargo test -- --nocapture
+  ci:
+    uses: greenticai/.github/.github/workflows/pr-ci.yml@main
+    with:
+      variant: host
+      # dependency-review already runs via dependency-review.yml (which also
+      # wires the Codex remediation path); avoid duplicate runs.
+      run-dependency-review: false
 
+  # Feature-flag coverage that pr-ci.yml (--all-features) doesn't exercise.
+  # These two builds verify the optional describe-v1 and runner-host-v1
+  # feature gates compile and pass tests in isolation.
   feature-builds:
     runs-on: ubuntu-latest
     env:
-      RUSTFLAGS: -C link-arg=-fuse-ld=bfd
       CARGO_INCREMENTAL: 0
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.95.0
-        with:
-          toolchain: 1.91.0
+      - uses: Swatinem/rust-cache@v2
       - run: cargo test --locked --features "describe-v1,runner-host-v1"
 
+  # Online integration tests — only on nightly schedule or main pushes.
   online:
     if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
-      RUSTFLAGS: -C link-arg=-fuse-ld=bfd
       RUN_ONLINE_TESTS: "1"
       CARGO_INCREMENTAL: 0
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -58,7 +47,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.95.0
-        with:
-          toolchain: 1.91.0
+      - uses: Swatinem/rust-cache@v2
       - name: Run online integration tests
         run: cargo test -p greentic-mcp-exec --test online_weather -- --nocapture
