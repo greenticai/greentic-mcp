@@ -1,8 +1,8 @@
 name: Codex Semver Fix
 on:
   schedule:
-    # 05:09 UTC — staggered off-peak slot. See plans/binary-bifurcation.md A.4.
-    - cron: "9 5 * * *"
+    # 03:30 UTC — moved into 03:XX window per plans/binary-bifurcation.md Phase A.7.2.
+    - cron: "30 3 * * *"
   workflow_dispatch:
     inputs:
       branch:
