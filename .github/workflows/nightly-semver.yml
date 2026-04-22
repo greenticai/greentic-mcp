@@ -7,8 +7,8 @@ name: Nightly Semver Advisory
 
 on:
   schedule:
-    # 06:29 UTC — staggered to avoid the 00/05/15/30/45 hot-spots.
-    - cron: "29 6 * * *"
+    # 03:51 UTC — moved into 03:XX window per plans/binary-bifurcation.md Phase A.7.2.
+    - cron: "51 3 * * *"
   workflow_dispatch:
     inputs:
       baseline-rev:

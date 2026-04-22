@@ -1,8 +1,8 @@
 name: Codex Security Fix
 on:
   schedule:
-    # 04:15 UTC — staggered off-peak slot. See plans/binary-bifurcation.md A.4.
-    - cron: "15 4 * * *"
+    # 03:11 UTC — moved into 03:XX window per plans/binary-bifurcation.md Phase A.7.2.
+    - cron: "11 3 * * *"
   workflow_dispatch:
     inputs:
       branch:
