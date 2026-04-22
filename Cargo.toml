@@ -14,7 +14,7 @@ edition = "2024"
 rust-version = "1.91"
 license = "MIT"
 repository = "https://github.com/greenticai/greentic-mcp"
-version = "0.4.25"
+version = "0.5.1"
 
 [workspace.dependencies]
 anyhow = "1.0"
@@ -22,10 +22,10 @@ async-trait = "0.1"
 base64 = "0.22"
 cap-std = "4"
 clap = { version = "4.5", features = ["derive"] }
-greentic-interfaces-guest = { version = "0.4", default-features = false, features = ["guest"] }
-greentic-interfaces-wasmtime = "0.4"
-greentic-mcp-exec = { version = "0.4", path = "crates/mcp-exec" }
-greentic-types = "0.4"
+greentic-interfaces-guest = { version = ">=0.5.0-0, <0.6.0-0", default-features = false, features = ["guest"] }
+greentic-interfaces-wasmtime = ">=0.5.0-0, <0.6.0-0"
+greentic-mcp-exec = { version = ">=0.5.0-0, <0.6.0-0", path = "crates/mcp-exec" }
+greentic-types = ">=0.5.0-0, <0.6.0-0"
 hex = "0.4"
 indexmap = "2"
 rand = { version = "0.10", features = ["std"] }
