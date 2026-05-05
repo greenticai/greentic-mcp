@@ -14,35 +14,101 @@ edition = "2024"
 rust-version = "1.91"
 license = "MIT"
 repository = "https://github.com/greenticai/greentic-mcp"
-version = "0.6.0-dev.1"
+version = "1.1.0-dev.0"
 
 [workspace.dependencies]
 anyhow = "1.0"
 async-trait = "0.1"
 base64 = "0.22"
 cap-std = "4"
-clap = { version = "4.5", features = ["derive"] }
-greentic-interfaces-guest = { version = ">=0.5.0-0, <0.6.0-0", default-features = false, features = ["guest"] }
-greentic-interfaces-wasmtime = ">=0.5.0-0, <0.6.0-0"
-greentic-mcp-exec = { version = ">=0.6.0-0, <0.7.0-0", path = "crates/mcp-exec" }
-greentic-types = ">=0.5.0-0, <0.6.0-0"
+greentic-interfaces-wasmtime = ">=1.1.0-dev, <1.2.0-0"
+greentic-types = ">=1.1.0-dev, <1.2.0-0"
 hex = "0.4"
 indexmap = "2"
-rand = { version = "0.10", features = ["std"] }
-reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "gzip", "brotli", "deflate", "rustls"] }
-serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
-serde_yaml_bw = { package = "serde_yaml_gtc", version = "2.5.2" }
 sha2 = "0.11"
 tempfile = "3"
 thiserror = "2.0"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 tracing = "0.1"
-wasmtime = { version = "43", default-features = false, features = ["async", "component-model", "cranelift", "runtime", "std"] }
-wasmtime-wasi = { version = "43", default-features = false, features = ["p2"] }
 wasmtime-wasi-http = "43"
 wasmtime-wasi-tls = "43"
-wit-bindgen = { version = "0.55", features = ["macros"] }
+
+[workspace.dependencies.clap]
+version = "4.5"
+features = [
+    "derive",
+]
+
+[workspace.dependencies.greentic-interfaces-guest]
+version = ">=1.1.0-dev, <1.2.0-0"
+default-features = false
+features = [
+    "guest",
+]
+
+[workspace.dependencies.greentic-mcp-exec]
+version = ">=1.1.0-dev, <1.2.0-0"
+path = "crates/mcp-exec"
+
+[workspace.dependencies.rand]
+version = "0.10"
+features = [
+    "std",
+]
+
+[workspace.dependencies.reqwest]
+version = "0.13"
+default-features = false
+features = [
+    "blocking",
+    "json",
+    "gzip",
+    "brotli",
+    "deflate",
+    "rustls",
+]
+
+[workspace.dependencies.serde]
+version = "1.0"
+features = [
+    "derive",
+]
+
+[workspace.dependencies.serde_yaml_bw]
+package = "serde_yaml_gtc"
+version = "2.5.2"
+
+[workspace.dependencies.tokio]
+version = "1"
+features = [
+    "rt-multi-thread",
+    "macros",
+    "time",
+]
+
+[workspace.dependencies.wasmtime]
+version = "43"
+default-features = false
+features = [
+    "async",
+    "component-model",
+    "cranelift",
+    "runtime",
+    "std",
+]
+
+[workspace.dependencies.wasmtime-wasi]
+version = "43"
+default-features = false
+features = [
+    "p2",
+]
+
+[workspace.dependencies.wit-bindgen]
+version = "0.55"
+features = [
+    "macros",
+]
 
 [profile.test]
 debug = "line-tables-only"
