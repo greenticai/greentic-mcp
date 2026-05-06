@@ -68,10 +68,11 @@ Key features:
 
 Guest component template that:
 
-- Exports `greentic:component/node@0.5.0` and imports `wasix:mcp@25.06.18`.
+- Exports `greentic:component/node@0.6.0` and imports `wasix:mcp@25.06.18`.
 - Accepts JSON payloads of `{operation?, tool?, arguments?}`:
   - Defaults to `list` when no tool is provided; defaults to `call` when a tool is present.
   - Maps `list` → `list-tools`, `call` → `call-tool(tool, arguments)`.
+  - Supports shorthand tool calls where runtime `operation` is a tool id (for example `get_weather`) and payload is passed as arguments.
 - Returns `{ok: true, result: ...}` envelopes with content/structured-content/meta and lightweight cards/messages for text/image/audio/resource(-link) blocks; elicitations surface as `{ok: true, elicitation: ...}`.
 - Errors use `{ok: false, error { code, message, status, tool, protocol, details }}` with codes `MCP_TOOL_ERROR`, `MCP_ROUTER_ERROR`, or `MCP_CONFIG_ERROR`.
 - Designed to be composed at pack-build time with a router component; the final merged artifact is the component flows should reference.
@@ -152,7 +153,7 @@ models MCP message shapes and executes tools locally via WIT/wasm host calls.
 - greentic-mcp builds and publishes the MCP adapter for `wasix:mcp@25.06.18` to GHCR:
   - `ghcr.io/greenticai/greentic-mcp-adapter:25.06.18-v<adapter_version>`
   - `ghcr.io/greenticai/greentic-mcp-adapter:25.06.18-stable` (moving pointer)
-- The pushed artifact is `mcp_adapter_25_06_18.component.wasm`, implementing `greentic:component/node@0.5.0` and importing `wasix:mcp@25.06.18`.
+- The pushed artifact is `mcp_adapter_25_06_18.component.wasm`, implementing `greentic:component/node@0.6.0` and importing `wasix:mcp@25.06.18`.
 - See `.github/workflows/publish-mcp-adapter.yml` and `scripts/build_adapter.sh` for the build/publish steps.
 
 ## Roadmap

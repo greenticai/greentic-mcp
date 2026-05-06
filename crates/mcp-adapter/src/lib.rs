@@ -10,7 +10,7 @@ mod bindings {
 }
 
 use bindings::exports::greentic::component::node::{
-    ExecCtx, Guest, InvokeResult, LifecycleStatus, NodeError, StreamEvent,
+    Guest, InvocationEnvelope, InvocationResult, NodeError,
 };
 use bindings::wasix::mcp::router;
 use serde::{Deserialize, Serialize};
@@ -55,13 +55,15 @@ struct ErrorEnvelope {
 impl ErrorEnvelope {
     fn node_error(&self) -> NodeError {
         let retryable = self.error.status >= 500;
-        let details = serde_json::to_string(self).unwrap_or_else(|_| self.error.message.clone());
+        let details = serde_json::to_value(self)
+            .ok()
+            .and_then(|value| serde_cbor::to_vec(&value).ok());
         NodeError {
             code: self.error.code.to_string(),
             message: self.error.message.clone(),
             retryable,
             backoff_ms: None,
-            details: Some(details),
+            details,
         }
     }
 }
@@ -110,51 +112,52 @@ impl McpRouter for WitRouter {
 struct Adapter;
 
 impl Guest for Adapter {
-    fn get_manifest() -> String {
-        serde_json::to_string(&json!({
-            "name": "greentic-mcp-adapter",
-            "version": env!("CARGO_PKG_VERSION"),
-            "protocol": PROTOCOL,
-            "operations": ["list", "call"],
-            "description": "MCP adapter template exporting greentic:component/node@0.5.0 and importing wasix:mcp@25.06.18.",
-        }))
-        .unwrap_or_else(|_| "{}".into())
-    }
+    fn invoke(op: String, envelope: InvocationEnvelope) -> Result<InvocationResult, NodeError> {
+        let input_json = decode_payload_json(&envelope).map_err(|err| err.node_error())?;
+        let value = handle_invoke(&WitRouter, &op, &input_json).map_err(|err| err.node_error())?;
+        let output_cbor = serde_cbor::to_vec(&value).map_err(|err| {
+            config_error(
+                format!("failed to encode output-cbor: {err}"),
+                None,
+                Value::Null,
+            )
+            .node_error()
+        })?;
 
-    fn on_start(_ctx: ExecCtx) -> Result<LifecycleStatus, String> {
-        Ok(LifecycleStatus::Ok)
-    }
-
-    fn on_stop(_ctx: ExecCtx, _reason: String) -> Result<LifecycleStatus, String> {
-        Ok(LifecycleStatus::Ok)
-    }
-
-    fn invoke(_ctx: ExecCtx, op: String, input: String) -> InvokeResult {
-        match handle_invoke(&WitRouter, &op, &input) {
-            Ok(value) => {
-                let rendered =
-                    serde_json::to_string(&value).unwrap_or_else(|_| "{\"ok\":true}".into());
-                InvokeResult::Ok(rendered)
-            }
-            Err(err) => InvokeResult::Err(err.node_error()),
-        }
-    }
-
-    fn invoke_stream(ctx: ExecCtx, op: String, input: String) -> Vec<StreamEvent> {
-        match Self::invoke(ctx, op, input) {
-            InvokeResult::Ok(body) => vec![StreamEvent::Data(body), StreamEvent::Done],
-            InvokeResult::Err(err) => {
-                let payload = err.details.clone().unwrap_or_else(|| err.message.clone());
-                vec![StreamEvent::Error(payload)]
-            }
-        }
+        Ok(InvocationResult {
+            ok: true,
+            output_cbor,
+            output_metadata_cbor: None,
+        })
     }
 }
 
 #[cfg(target_arch = "wasm32")]
-bindings::exports::greentic::component::node::__export_greentic_component_node_0_5_0_cabi!(
+bindings::exports::greentic::component::node::__export_greentic_component_node_0_6_0_cabi!(
     Adapter with_types_in bindings::exports::greentic::component::node
 );
+
+fn decode_payload_json(envelope: &InvocationEnvelope) -> AdapterResult<String> {
+    let payload = if envelope.payload_cbor.is_empty() {
+        json!({})
+    } else {
+        serde_cbor::from_slice::<Value>(&envelope.payload_cbor).map_err(|err| {
+            Box::new(config_error(
+                format!("invalid payload-cbor: {err}"),
+                None,
+                Value::Null,
+            ))
+        })?
+    };
+
+    serde_json::to_string(&payload).map_err(|err| {
+        Box::new(config_error(
+            format!("failed to encode payload as JSON: {err}"),
+            None,
+            Value::Null,
+        ))
+    })
+}
 
 fn handle_invoke<R: McpRouter>(router: &R, op: &str, input: &str) -> AdapterResult<Value> {
     let request = parse_request(op, input)?;
@@ -181,13 +184,32 @@ fn handle_invoke<R: McpRouter>(router: &R, op: &str, input: &str) -> AdapterResu
 }
 
 fn parse_request(op: &str, input: &str) -> AdapterResult<ParsedRequest> {
-    let parsed: AdapterRequest = serde_json::from_str(input).map_err(|err| {
+    let raw_value: Value = serde_json::from_str(input).map_err(|err| {
         Box::new(config_error(
             format!("invalid request payload: {err}"),
             None,
             json!({"raw": input}),
         ))
     })?;
+    let mut parsed: AdapterRequest = serde_json::from_value(raw_value.clone()).map_err(|err| {
+        Box::new(config_error(
+            format!("invalid request payload: {err}"),
+            None,
+            json!({"raw": input}),
+        ))
+    })?;
+
+    if should_use_shorthand_payload(&raw_value) {
+        // Compatibility shorthand for component.exec:
+        // - runner op carries tool id (e.g. "get_weather")
+        // - payload is the raw arguments object
+        // This lets flows call MCP tools without wrapping every input as
+        // {"operation":"call","tool":"...","arguments":{...}}.
+        parsed.arguments = raw_value;
+    }
+    if parsed.tool.is_none() {
+        parsed.tool = unknown_operation_as_tool(op);
+    }
 
     let operation = resolve_operation(parsed.operation.as_deref(), op, parsed.tool.as_deref())?;
     let arguments_value = parsed.arguments.clone();
@@ -204,6 +226,21 @@ fn parse_request(op: &str, input: &str) -> AdapterResult<ParsedRequest> {
         tool: parsed.tool,
         arguments,
     })
+}
+
+fn should_use_shorthand_payload(value: &Value) -> bool {
+    let Value::Object(map) = value else {
+        return false;
+    };
+    !map.contains_key("operation") && !map.contains_key("tool") && !map.contains_key("arguments")
+}
+
+fn unknown_operation_as_tool(op: &str) -> Option<String> {
+    let trimmed = op.trim();
+    if trimmed.is_empty() || parse_operation(trimmed).is_some() {
+        return None;
+    }
+    Some(trimmed.to_string())
 }
 
 #[derive(Debug)]
@@ -702,6 +739,62 @@ mod tests {
             r#"{"operation":"call","tool":"demo","arguments":{"count":3,"active":true,"items":["a","b"],"meta":{"score":9.5}}}"#,
         )
         .expect("call should succeed");
+
+        assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn shorthand_tool_operation_from_runner_op() {
+        struct AssertOpAndArgsRouter {
+            expected_tool: String,
+            expected_args: Value,
+        }
+
+        impl McpRouter for AssertOpAndArgsRouter {
+            fn list_tools(&self) -> Result<Vec<router::Tool>, RouterError> {
+                Ok(vec![])
+            }
+
+            fn call_tool(
+                &self,
+                tool: &str,
+                arguments: &Value,
+            ) -> Result<router::Response, CallFailure> {
+                if tool != self.expected_tool {
+                    return Err(CallFailure::Transport(format!(
+                        "unexpected tool: {tool}"
+                    )));
+                }
+                if arguments != &self.expected_args {
+                    return Err(CallFailure::Transport(format!(
+                        "unexpected arguments: {arguments}"
+                    )));
+                }
+                Ok(router::Response::Completed(router::ToolResult {
+                    content: vec![],
+                    structured_content: None,
+                    progress: None,
+                    meta: None,
+                    is_error: None,
+                }))
+            }
+        }
+
+        let router = AssertOpAndArgsRouter {
+            expected_tool: "get_weather".to_string(),
+            expected_args: json!({
+                "key": "demo",
+                "q": "Nairobi",
+                "aqi": "no",
+            }),
+        };
+
+        let result = handle_invoke(
+            &router,
+            "get_weather",
+            r#"{"key":"demo","q":"Nairobi","aqi":"no"}"#,
+        )
+        .expect("shorthand call should succeed");
 
         assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
     }

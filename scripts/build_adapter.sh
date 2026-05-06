@@ -62,14 +62,9 @@ ensure_bindings() {
   fi
 
   local iface_version iface_src
-  iface_version="$(python3 - <<'PY'
-import tomllib
-from pathlib import Path
-lock = Path('Cargo.lock')
-data = tomllib.loads(lock.read_text())
-print(next(p['version'] for p in data['package'] if p['name']=='greentic-interfaces'))
-PY
-)"
+  iface_version="$(cargo metadata --format-version 1 --locked \
+    | jq -r '.packages[] | select(.name=="greentic-interfaces") | .version' \
+    | head -n1)"
   if [ -z "${iface_version}" ]; then
     echo "error: unable to discover greentic-interfaces version from Cargo.lock" >&2
     exit 1

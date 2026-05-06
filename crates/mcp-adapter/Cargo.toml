@@ -4,7 +4,7 @@ version.workspace = true
 edition = "2024"
 license = "MIT"
 publish = false
-description = "Guest MCP adapter template exporting greentic:component/node@0.5.0 and importing wasix:mcp@25.06.18"
+description = "Guest MCP adapter template exporting greentic:component/node@0.6.0 and importing wasix:mcp@25.06.18"
 readme = "README.md"
 
 [package.metadata.component]
@@ -17,6 +17,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 greentic-interfaces-guest.workspace = true
 serde = { workspace = true, features = ["derive"] }
+serde_cbor = "0.11"
 serde_json.workspace = true
 thiserror.workspace = true
 wit-bindgen.workspace = true

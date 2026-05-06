@@ -3,7 +3,7 @@
 ## mcp-adapter
 
 `crates/mcp-adapter` is a guest component template that bridges JSON payloads into
-`wasix:mcp@25.06.18` router calls. It exports `greentic:component/node@0.5.0` so the
+`wasix:mcp@25.06.18` router calls. It exports `greentic:component/node@0.6.0` so the
 component can be described and controlled by the Greentic platform, and it
 imports `wasix:mcp@25.06.18` so it can invoke router exports.
 
@@ -11,6 +11,8 @@ What it does:
 
 - Accepts `{operation?, tool?, arguments?}` JSON requests and applies defaults
   (`list` when no tool is provided, `call` when a tool is present).
+- Supports shorthand calls where runtime `operation` is used as the tool name
+  and the payload object is treated as `arguments`.
 - Maps `list` to `list-tools` and `call` to `call-tool(tool, arguments)`.
 - Returns MCP envelopes with `content`, optional `structured_content`, and
   lightweight `messages` cards; elicitations are surfaced as

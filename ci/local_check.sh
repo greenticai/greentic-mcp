@@ -143,6 +143,11 @@ run_cmd "cargo test --locked --features describe-v1,runner-host-v1" cargo test -
 
 if [[ "$ONLINE" == "1" ]]; then
   run_cmd "Online tests (greentic-mcp-exec::online_weather)" env RUN_ONLINE_TESTS=1 cargo test -p greentic-mcp-exec --test online_weather -- --nocapture
+  if ensure_tool gtc "Example MCP smoke (example.com)"; then
+    run_cmd "Example MCP smoke (example.com)" ./ci/example_smoke_example_com.sh
+  else
+    run_or_skip "Example MCP smoke (needs gtc + delegated tools)" false
+  fi
 else
   run_or_skip "Online tests (set LOCAL_CHECK_ONLINE=1 to enable)" false
 fi
