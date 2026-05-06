@@ -251,6 +251,7 @@ fn load_input(inline: Option<String>, file: Option<PathBuf>) -> Result<String> {
 )]
 #[component(enum)]
 #[repr(u8)]
+#[allow(dead_code)] // variants mirror the WIT enum ABI even when only NotFound is constructed
 enum GeneratorSecretsError {
     #[component(name = "not-found")]
     NotFound,
@@ -271,9 +272,7 @@ enum GeneratorSecretsError {
 /// non-alphanumeric character becomes `_`. As a single-value fallback for
 /// smoke tests, `GREENTIC_MCP_SECRET` is returned when neither the per-key var
 /// nor the literal-key var is set.
-fn add_generator_secrets_store_to_linker(
-    linker: &mut Linker<StoreState>,
-) -> wasmtime::Result<()> {
+fn add_generator_secrets_store_to_linker(linker: &mut Linker<StoreState>) -> wasmtime::Result<()> {
     let mut instance = linker.instance("greentic:secrets-store/secrets-store@1.0.0")?;
     instance.func_wrap(
         "get",
