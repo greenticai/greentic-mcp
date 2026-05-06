@@ -228,12 +228,12 @@ fn download_once(client: &reqwest::blocking::Client, url: &str, dest: &Path) -> 
 mod tests {
     use super::*;
     use crate::resolve;
+    use crate::test_support::local_tempdir as tempdir;
     use std::fs;
-    use tempfile::tempdir;
 
     #[test]
     fn list_dir_without_root_returns_empty() {
-        let root = tempdir().expect("tmp root");
+        let root = tempdir();
         let store = ToolStore::LocalDir(root.path().into());
         let tools = store.list().expect("list");
         assert!(tools.is_empty());
@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn list_local_finds_wasm_files_sorted() {
-        let root = tempdir().expect("tmp root");
+        let root = tempdir();
         fs::write(root.path().join("z.wasm"), b"z").unwrap();
         fs::write(root.path().join("a.wasm"), b"a").unwrap();
         fs::write(root.path().join("ignore.txt"), b"x").unwrap();
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn fetch_local_returns_matching_tool() {
-        let root = tempdir().expect("tmp root");
+        let root = tempdir();
         let wasm_path = root.path().join("tool.wasm");
         fs::write(&wasm_path, b"component").unwrap();
 
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn fetch_local_reports_missing_tool() {
-        let root = tempdir().expect("tmp root");
+        let root = tempdir();
         let store = ToolStore::LocalDir(root.path().into());
         let err = store.fetch("missing").expect_err("should miss");
         assert!(is_not_found(&err));
@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn fetch_http_rejects_wrong_name() {
-        let root = tempdir().expect("cache root");
+        let root = tempdir();
         let err = fetch_http(
             "expected",
             "https://example.com/x.wasm",
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn fetch_http_uses_cached_file_if_present() {
-        let root = tempdir().expect("cache root");
+        let root = tempdir();
         let store = ToolStore::HttpSingleFile {
             name: "expected".into(),
             url: "https://example.com/x.wasm".into(),
@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn compute_sha256_stable_for_fixture() {
-        let root = tempdir().expect("tmp root");
+        let root = tempdir();
         let file = root.path().join("one.wasm");
         fs::write(&file, b"abc").unwrap();
         assert_eq!(
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn resolve_tool_is_consistent_with_local_store_listing() {
-        let root = tempdir().expect("tmp root");
+        let root = tempdir();
         let wasm = root.path().join("roundtrip.wasm");
         fs::write(&wasm, b"wasm").unwrap();
 

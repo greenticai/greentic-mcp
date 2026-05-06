@@ -10,6 +10,8 @@ mod resolve;
 pub mod router;
 pub mod runner;
 mod store;
+#[cfg(test)]
+mod test_support;
 mod verify;
 
 pub use config::{DynSecretsStore, ExecConfig, RuntimePolicy, SecretsStore, VerifyPolicy};

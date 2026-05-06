@@ -1,6 +1,7 @@
 /target
 .DS_Store
 **/target
+**/.greentic-mcp-tests
 **/dist
 **/build
 **/node_modules

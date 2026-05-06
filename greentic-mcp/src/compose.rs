@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -27,6 +28,10 @@ pub fn compose_router_with_bundled_adapter(
     let adapter_path = write_adapter_component()?;
 
     let output = output.to_path_buf();
+    if try_compose_with_wac(adapter_path.path(), router, &output)? {
+        return Ok(());
+    }
+
     let status = Command::new(&wasm_tools)
         .arg("compose")
         .arg(adapter_path.path())
@@ -44,6 +49,27 @@ pub fn compose_router_with_bundled_adapter(
     Ok(())
 }
 
+fn try_compose_with_wac(adapter: &Path, router: &Path, output: &Path) -> Result<bool> {
+    let Some(wac) = resolve_wac() else {
+        return Ok(false);
+    };
+
+    let status = Command::new(&wac)
+        .arg("plug")
+        .arg(adapter)
+        .arg("--plug")
+        .arg(router)
+        .arg("--output")
+        .arg(output)
+        .status();
+
+    match status {
+        Ok(status) => Ok(status.success()),
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(anyhow!("running {}: {err}", wac.display())),
+    }
+}
+
 fn resolve_wasm_tools(wasm_tools: Option<&Path>) -> Result<PathBuf> {
     if let Some(path) = wasm_tools {
         return Ok(path.to_path_buf());
@@ -54,6 +80,15 @@ fn resolve_wasm_tools(wasm_tools: Option<&Path>) -> Result<PathBuf> {
         return Ok(PathBuf::from(path));
     }
     Ok(PathBuf::from("wasm-tools"))
+}
+
+fn resolve_wac() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("GREENTIC_MCP_WAC")
+        && !path.trim().is_empty()
+    {
+        return Some(PathBuf::from(path));
+    }
+    Some(PathBuf::from("wac"))
 }
 
 fn write_adapter_component() -> Result<tempfile::NamedTempFile> {

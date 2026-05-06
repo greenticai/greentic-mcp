@@ -1,0 +1,59 @@
+// SPDX-License-Identifier: MIT
+
+package greentic:component@0.6.0;
+
+interface node {
+  type capability-id = string;
+  type component-id = string;
+  type flow-id = string;
+  type step-id = string;
+  type tenant-id = string;
+  type team-id = string;
+  type user-id = string;
+  type env-id = string;
+  type trace-id = string;
+  type correlation-id = string;
+
+  record node-error {
+    code: string,
+    message: string,
+    retryable: bool,
+    backoff-ms: option<u64>,
+    details: option<list<u8>>,
+  }
+
+  record tenant-ctx {
+    tenant-id: tenant-id,
+    team-id: option<team-id>,
+    user-id: option<user-id>,
+    env-id: env-id,
+    trace-id: trace-id,
+    correlation-id: correlation-id,
+    deadline-ms: u64,
+    attempt: u32,
+    idempotency-key: option<string>,
+    i18n-id: string,
+  }
+
+  record invocation-envelope {
+    ctx: tenant-ctx,
+    flow-id: flow-id,
+    step-id: step-id,
+    component-id: component-id,
+    attempt: u32,
+    payload-cbor: list<u8>,
+    metadata-cbor: option<list<u8>>,
+  }
+
+  record invocation-result {
+    ok: bool,
+    output-cbor: list<u8>,
+    output-metadata-cbor: option<list<u8>>,
+  }
+
+  invoke: func(op: string, envelope: invocation-envelope) -> result<invocation-result, node-error>;
+}
+
+world component {
+  export node;
+}
