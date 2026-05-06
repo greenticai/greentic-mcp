@@ -761,9 +761,7 @@ mod tests {
                 arguments: &Value,
             ) -> Result<router::Response, CallFailure> {
                 if tool != self.expected_tool {
-                    return Err(CallFailure::Transport(format!(
-                        "unexpected tool: {tool}"
-                    )));
+                    return Err(CallFailure::Transport(format!("unexpected tool: {tool}")));
                 }
                 if arguments != &self.expected_args {
                     return Err(CallFailure::Transport(format!(
@@ -1019,89 +1017,30 @@ mod tests {
     }
 
     #[test]
-    fn manifest_and_status_methods_are_usable() {
-        let tenant_ctx = bindings::exports::greentic::component::node::TenantCtx {
-            tenant: "tenant".into(),
-            team: Some("team".into()),
-            user: Some("user".into()),
-            trace_id: Some("trace".into()),
-            correlation_id: Some("corr".into()),
-            deadline_unix_ms: Some(0),
-            attempt: 0,
-            idempotency_key: Some("idem".into()),
-        };
-        let ctx = ExecCtx {
-            tenant: tenant_ctx,
-            flow_id: "flow".into(),
-            node_id: Some("node".into()),
-        };
-        let manifest = Adapter::get_manifest();
-        let parsed: Value = serde_json::from_str(&manifest).expect("manifest json");
-        assert_eq!(parsed.get("name"), Some(&json!("greentic-mcp-adapter")));
-        assert_eq!(parsed.get("operations"), Some(&json!(["list", "call"])));
-        assert_eq!(parsed.get("protocol"), Some(&json!(PROTOCOL)));
-
-        let start = Adapter::on_start(ctx);
-        assert!(matches!(start, Ok(LifecycleStatus::Ok)));
-        let stop = Adapter::on_stop(
-            ExecCtx {
-                tenant: bindings::exports::greentic::component::node::TenantCtx {
-                    tenant: "tenant".into(),
-                    team: Some("team".into()),
-                    user: Some("user".into()),
-                    trace_id: Some("trace".into()),
-                    correlation_id: Some("corr".into()),
-                    deadline_unix_ms: Some(0),
-                    attempt: 0,
-                    idempotency_key: Some("idem".into()),
-                },
-                flow_id: "flow".into(),
-                node_id: Some("node".into()),
-            },
-            "shutting down".into(),
-        );
-        assert!(matches!(stop, Ok(LifecycleStatus::Ok)));
-    }
-
-    #[test]
-    fn guest_invoke_and_invoke_stream_cover_success_and_error_paths() {
-        let malformed_ctx = ExecCtx {
-            tenant: bindings::exports::greentic::component::node::TenantCtx {
-                tenant: "tenant".into(),
-                team: None,
-                user: None,
-                trace_id: None,
-                correlation_id: None,
-                deadline_unix_ms: None,
+    fn guest_invoke_returns_node_error_on_malformed_payload() {
+        let envelope = InvocationEnvelope {
+            ctx: bindings::exports::greentic::component::node::TenantCtx {
+                tenant_id: "tenant".into(),
+                team_id: None,
+                user_id: None,
+                env_id: "env".into(),
+                trace_id: "trace".into(),
+                correlation_id: "corr".into(),
+                deadline_ms: 0,
                 attempt: 0,
                 idempotency_key: None,
+                i18n_id: "en".into(),
             },
             flow_id: "flow".into(),
-            node_id: None,
+            step_id: "step".into(),
+            component_id: "component".into(),
+            attempt: 0,
+            payload_cbor: b"not-cbor".to_vec(),
+            metadata_cbor: None,
         };
 
-        let err = Adapter::invoke(
-            ExecCtx {
-                tenant: bindings::exports::greentic::component::node::TenantCtx {
-                    tenant: "tenant".into(),
-                    team: None,
-                    user: None,
-                    trace_id: None,
-                    correlation_id: None,
-                    deadline_unix_ms: None,
-                    attempt: 0,
-                    idempotency_key: None,
-                },
-                flow_id: "flow".into(),
-                node_id: None,
-            },
-            "call".into(),
-            "not-json".into(),
-        );
-        let stream = Adapter::invoke_stream(malformed_ctx, "call".into(), "not-json".into());
-
-        assert!(matches!(err, InvokeResult::Err(_)));
-        assert_eq!(stream.len(), 1);
+        let err = Adapter::invoke("call".into(), envelope).expect_err("malformed payload");
+        assert_eq!(err.code, "MCP_CONFIG_ERROR");
     }
 
     #[test]
