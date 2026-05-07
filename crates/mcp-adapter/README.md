@@ -1,10 +1,12 @@
 # Greentic MCP Adapter (wasix:mcp@25.06.18)
 
-Guest component template that exports `greentic:component/node@0.5.0` and imports `wasix:mcp@25.06.18`. Intended to be composed with an MCP router component at pack-build time to produce the final MCP component artifact.
+Guest component template that exports `greentic:component/node@0.6.0` and imports `wasix:mcp@25.06.18`. Intended to be composed with an MCP router component at pack-build time to produce the final MCP component artifact.
 
 ## Input contract
 
-The adapter expects JSON payloads shaped as:
+The adapter accepts either:
+
+1) Explicit MCP adapter shape:
 
 ```json
 {
@@ -14,9 +16,25 @@ The adapter expects JSON payloads shaped as:
 }
 ```
 
-Defaults:
+2) Component-exec shorthand:
+
+```json
+{
+  "key": "...",
+  "q": "Nairobi",
+  "aqi": "no"
+}
+```
+
+When shorthand is used, the runtime operation id (for example `get_weather`) is
+treated as the MCP tool name and the full JSON object is passed as
+`arguments`.
+
+Defaults / resolution:
 - If `operation` is missing and `tool` is present → treat as `call`.
 - If `operation` and `tool` are missing → treat as `list`.
+- If `operation` is an unknown value and `tool` is missing, the operation value
+  is treated as the tool name (compatibility path).
 - `arguments` defaults to `{}`; must be an object if provided.
 
 ## Behavior

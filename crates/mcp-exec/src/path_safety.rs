@@ -45,12 +45,12 @@ pub fn normalize_under_root(root: &Path, candidate: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::local_tempdir as tempdir;
     use std::fs;
-    use tempfile::tempdir;
 
     #[test]
     fn normalizes_existing_relative_path() {
-        let root = tempdir().expect("tmp root");
+        let root = tempdir();
         let nested = root.path().join("tools");
         fs::create_dir_all(&nested).expect("mkdir");
         let file = nested.join("example.wasm");
@@ -67,7 +67,7 @@ mod tests {
 
     #[test]
     fn rejects_absolute_paths() {
-        let root = tempdir().expect("tmp root");
+        let root = tempdir();
         let err = normalize_under_root(root.path(), Path::new("/etc/passwd"))
             .expect_err("absolute path should fail");
         let text = err.to_string();
@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn rejects_paths_that_escape_root() {
-        let root = tempdir().expect("tmp root");
+        let root = tempdir();
         let err = normalize_under_root(root.path(), Path::new("../outside"))
             .expect_err("escape should fail");
         assert!(err.to_string().contains("path escapes root"));
@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn accepts_missing_leaf_under_root() {
-        let root = tempdir().expect("tmp root");
+        let root = tempdir();
         let nested = root.path().join("tools");
         fs::create_dir_all(&nested).expect("mkdir");
 
