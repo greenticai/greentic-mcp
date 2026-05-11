@@ -15,6 +15,14 @@ pkg-url = "{ repo }/releases/download/v{ version }/greentic-mcp-v{ version }-{ t
 pkg-fmt = "tgz"
 bin-dir = "greentic-mcp-v{ version }-{ target }/{ bin }{ binary-ext }"
 
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/greentic-mcp-v{ version }-{ target }.zip"
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/greentic-mcp-v{ version }-{ target }.zip"
+pkg-fmt = "zip"
+
 [lib]
 name = "greentic_mcp"
 path = "src/lib.rs"
