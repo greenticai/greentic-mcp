@@ -19,6 +19,7 @@ jobs:
     with:
       package: greentic-mcp
       binary: greentic-mcp
+      windows-archive-format: zip
       extra-files: |
         README.md
     secrets: inherit
@@ -28,6 +29,7 @@ jobs:
     with:
       package: greentic-mcp-exec
       binary: greentic-mcp-exec
+      windows-archive-format: zip
       extra-files: |
         README.md
     secrets: inherit
