@@ -910,7 +910,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1118,9 +1118,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces"
-version = "1.1.0-dev.25540474673"
+version = "1.1.0-dev.26275479000"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6a3bf770f43222971da4c5b32b7b4f8ca2a19f32334e7914ad5683b2a848b84"
+checksum = "2ee9d2d73cda95800fb5fbcf3d9f7751030494774aaace7f8a0cffca37c241b3"
 dependencies = [
  "anyhow",
  "constant_time_eq",
@@ -1136,9 +1136,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces-guest"
-version = "1.1.0-dev.25540474673"
+version = "1.1.0-dev.26275479000"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a9871668ff192398dd4845399c83cca99e11a0411a6381184c9dfd8d696f424"
+checksum = "a6cdaed71bfd790b2186ec5c07c83a04a9fcf7fe1c3323149a14cf534fd6daee"
 dependencies = [
  "greentic-interfaces",
  "greentic-types",
@@ -1149,9 +1149,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces-wasmtime"
-version = "1.1.0-dev.25540474673"
+version = "1.1.0-dev.26275479000"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb682c0e978d0ee419842520824d45db3b14bad18974c90ece5cb2b9769755bd"
+checksum = "05eba496baf33d0c106f1d10b41db0d0c8254bd7ca4473bc2c9c96726104728b"
 dependencies = [
  "anyhow",
  "camino",
@@ -1229,9 +1229,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-types"
-version = "1.1.0-dev.25540461571"
+version = "1.1.0-dev.26386264344"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df38b70a9539e751664e0c3e0a21d6b9ea48e5345d9089d16c5058f122055d30"
+checksum = "d00c6caeb8594e122de72690567bee7ad622bd795a58b9d76cd8aa48ec1e5e83"
 dependencies = [
  "anyhow",
  "blake3",
@@ -2281,7 +2281,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2362,7 +2362,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2724,7 +2724,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3641,7 +3641,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
