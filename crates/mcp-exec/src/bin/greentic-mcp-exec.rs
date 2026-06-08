@@ -11,7 +11,7 @@ use wasmtime::component::{Component, Linker};
 use wasmtime::{Config, Engine, Store};
 use wasmtime_wasi::p2::add_to_linker_sync as add_wasi_to_linker;
 use wasmtime_wasi_http::p2::add_only_http_to_linker_sync as add_wasi_http_to_linker;
-use wasmtime_wasi_tls::LinkOptions;
+use wasmtime_wasi_tls::p2::LinkOptions;
 
 #[derive(Parser)]
 #[command(
@@ -138,7 +138,7 @@ fn invoke_router(
     // and wasi:tls types can instantiate in this direct CLI path.
     let mut opts = LinkOptions::default();
     opts.tls(true);
-    wasmtime_wasi_tls::add_to_linker(&mut linker, &mut opts, |h: &mut StoreState| h.wasi_tls())
+    wasmtime_wasi_tls::p2::add_to_linker(&mut linker, &opts)
         .map_err(|err| anyhow!("linking wasi tls imports: {}", err))?;
     add_wasi_http_to_linker(&mut linker)
         .map_err(|err| anyhow!("linking wasi http imports: {}", err))?;

@@ -18,7 +18,8 @@ use wasmtime_wasi_http::WasiHttpCtx;
 use wasmtime_wasi_http::p2::{
     WasiHttpCtxView, WasiHttpView, add_only_http_to_linker_sync as add_wasi_http_to_linker,
 };
-use wasmtime_wasi_tls::{LinkOptions, WasiTls, WasiTlsCtx, WasiTlsCtxBuilder};
+use wasmtime_wasi_tls::p2::LinkOptions;
+use wasmtime_wasi_tls::{WasiTlsCtx, WasiTlsCtxBuilder, WasiTlsCtxView, WasiTlsView};
 
 use crate::ExecRequest;
 use crate::config::{DynSecretsStore, RuntimePolicy};
@@ -143,7 +144,7 @@ fn run_sync(
     // Add wasi-tls types and turn on the feature in linker
     let mut opts = LinkOptions::default();
     opts.tls(true);
-    wasmtime_wasi_tls::add_to_linker(&mut linker, &mut opts, |h: &mut StoreState| h.wasi_tls())?;
+    wasmtime_wasi_tls::p2::add_to_linker(&mut linker, &opts)?;
 
     // Add wasi-http types and turn on the feature in linker
     add_wasi_http_to_linker(&mut linker)?;
@@ -364,12 +365,28 @@ pub struct StoreState {
 unsafe impl Send for StoreState {}
 unsafe impl Sync for StoreState {}
 
+/// Install a process-wide rustls crypto provider exactly once.
+///
+/// wasmtime-wasi-tls 45's `WasiTlsCtxBuilder::new()` eagerly constructs
+/// `RustlsProvider::default()`, which calls `rustls::ClientConfig::builder()`.
+/// That builder panics when rustls cannot pick a process-default
+/// `CryptoProvider` — and both `aws-lc-rs` and `ring` are linked in this tree.
+/// Pin the default to `aws-lc-rs` (matching greentic-runner) so the choice is
+/// deterministic. `install_default` is a no-op if a provider is already set.
+fn ensure_rustls_provider() {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    });
+}
+
 impl StoreState {
     pub fn new(
         http_enabled: bool,
         secrets_store: Option<DynSecretsStore>,
         tenant: Option<greentic_types::TenantCtx>,
     ) -> Self {
+        ensure_rustls_provider();
         let mut builder = WasiCtxBuilder::new();
         builder.inherit_stdio().inherit_env();
         if http_enabled {
@@ -392,10 +409,6 @@ impl StoreState {
 
     pub fn table_mut(&mut self) -> &mut ResourceTable {
         &mut self.table
-    }
-
-    pub fn wasi_tls(&mut self) -> WasiTls<'_> {
-        WasiTls::new(&self.wasi_tls_ctx, &mut self.table)
     }
 
     pub fn wasi_http_ctx_mut(&mut self) -> &mut WasiHttpCtx {
@@ -550,6 +563,15 @@ impl WasiView for StoreState {
     fn ctx(&mut self) -> WasiCtxView<'_> {
         WasiCtxView {
             ctx: &mut self.wasi_ctx,
+            table: &mut self.table,
+        }
+    }
+}
+
+impl WasiTlsView for StoreState {
+    fn tls(&mut self) -> WasiTlsCtxView<'_> {
+        WasiTlsCtxView {
+            ctx: &mut self.wasi_tls_ctx,
             table: &mut self.table,
         }
     }
@@ -1001,7 +1023,7 @@ mod tests {
         );
         assert!(state.http_client().is_ok());
         let _ = state.table_mut();
-        let _ = state.wasi_tls();
+        let _ = WasiTlsView::tls(&mut state);
         let _ = state.wasi_http_ctx_mut();
         state.kv_put("ns".into(), "key".into(), "val".to_string());
     }
