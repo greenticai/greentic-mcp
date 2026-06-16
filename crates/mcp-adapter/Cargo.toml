@@ -16,9 +16,10 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 # Guest telemetry (OAuth lifecycle logs/spans) routed to the host over the
-# `greentic:telemetry/logging` WIT import (stdout fallback when absent), same as
-# the generated router. Compiles to no-ops when disabled.
-default = ["telemetry"]
+# `greentic:telemetry/logging` WIT import. Opt-in (default OFF): enabling it
+# makes the component import that interface, which not every runtime provides
+# yet. Compiles to no-ops when disabled.
+default = []
 telemetry = ["dep:greentic-telemetry", "greentic-telemetry/wit-guest"]
 
 [dependencies]
