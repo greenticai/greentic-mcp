@@ -14,11 +14,19 @@ world = "adapter"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# Guest telemetry (OAuth lifecycle logs/spans) routed to the host over the
+# `greentic:telemetry/logging` WIT import (stdout fallback when absent), same as
+# the generated router. Compiles to no-ops when disabled.
+default = ["telemetry"]
+telemetry = ["dep:greentic-telemetry", "greentic-telemetry/wit-guest"]
+
 [dependencies]
 greentic-interfaces-guest.workspace = true
 # Export-free OAuth card logic (decision + Adaptive Card render). Path dep on a
 # sibling checkout for now; to be published before merge.
 oauth-card-core = { path = "../../../component-oauth-card/crates/oauth-card-core" }
+greentic-telemetry = { version = "0.5", default-features = false, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_cbor = "0.11"
 serde_json.workspace = true

@@ -21,6 +21,37 @@ use thiserror::Error;
 const PROTOCOL: &str = "25.06.18";
 type AdapterResult<T> = Result<T, Box<ErrorEnvelope>>;
 
+// Guest telemetry for the OAuth lifecycle. Flows to the host over the
+// `greentic:telemetry/logging` WIT import (stdout fallback when absent), the
+// same path the generated router uses. No-ops when the `telemetry` feature is
+// off.
+mod telemetry {
+    #[cfg(feature = "telemetry")]
+    use greentic_telemetry::wasm_guest::{Field, Level, log as gt_log};
+
+    #[cfg(feature = "telemetry")]
+    fn to_fields<'a>(fields: &'a [(&'a str, &'a str)]) -> Vec<Field<'a>> {
+        fields
+            .iter()
+            .map(|(k, v)| Field { key: k, value: v })
+            .collect()
+    }
+
+    #[cfg(feature = "telemetry")]
+    pub fn info(message: &str, fields: &[(&str, &str)]) {
+        gt_log(Level::Info, message, &to_fields(fields));
+    }
+    #[cfg(feature = "telemetry")]
+    pub fn error(message: &str, fields: &[(&str, &str)]) {
+        gt_log(Level::Error, message, &to_fields(fields));
+    }
+
+    #[cfg(not(feature = "telemetry"))]
+    pub fn info(_message: &str, _fields: &[(&str, &str)]) {}
+    #[cfg(not(feature = "telemetry"))]
+    pub fn error(_message: &str, _fields: &[(&str, &str)]) {}
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AdapterRequest {
@@ -221,14 +252,23 @@ fn oauth_sign_in_card<R: McpRouter>(
         .and_then(Value::as_str)
         .map(|s| !s.trim().is_empty())
         .unwrap_or(false);
-    if has_token {
-        return Ok(None);
-    }
-
     let provider_id = oauth
         .get("provider_id")
         .and_then(Value::as_str)
         .unwrap_or("oauth-provider");
+
+    if has_token {
+        telemetry::info(
+            "oauth.token_present",
+            &[("tool", tool_name), ("provider", provider_id)],
+        );
+        return Ok(None);
+    }
+    telemetry::info(
+        "oauth.sign_in_required",
+        &[("tool", tool_name), ("provider", provider_id)],
+    );
+
     let subject = arguments
         .get("subject")
         .and_then(Value::as_str)
@@ -256,13 +296,40 @@ fn oauth_sign_in_card<R: McpRouter>(
         payload["mode"] = json!("status-card");
     }
 
+    let mode = payload
+        .get("mode")
+        .and_then(Value::as_str)
+        .unwrap_or("status-card");
     let mut card = oauth_card_core::handle_message_json(&payload).map_err(|err| {
+        let detail = err.to_string();
+        telemetry::error(
+            "oauth.card_render_failed",
+            &[
+                ("tool", tool_name),
+                ("provider", provider_id),
+                ("error", &detail),
+            ],
+        );
         Box::new(config_error(
-            format!("oauth card render failed: {err}"),
+            format!("oauth card render failed: {detail}"),
             Some(tool_name.to_string()),
             Value::Null,
         ))
     })?;
+    let status = card
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    telemetry::info(
+        "oauth.card_rendered",
+        &[
+            ("tool", tool_name),
+            ("provider", provider_id),
+            ("mode", mode),
+            ("status", status.as_str()),
+        ],
+    );
     if let Value::Object(map) = &mut card {
         map.insert("ok".to_string(), Value::Bool(true));
         map.insert("needs_auth".to_string(), Value::Bool(true));
