@@ -7,6 +7,17 @@ mod bindings {
         generate_unused_types: true,
         generate_all,
     });
+
+    // The adapter must use a local `generate!` (it imports the non-greentic
+    // `wasix:mcp/router` world), so the secrets-store binding can't come from the
+    // canonical greentic-interfaces crate without a duplicate component-type
+    // section. Re-export it here via a `self::` path; consumers reference
+    // `bindings::host_secrets_store`, keeping the raw locally-generated greentic
+    // import path (which the canonical-import lint forbids) out of the rest of
+    // the code. Only referenced on wasm (the host call); gated to avoid an
+    // unused-import warning on native test builds.
+    #[cfg(target_arch = "wasm32")]
+    pub use self::greentic::secrets_store::secrets_store as host_secrets_store;
 }
 
 use bindings::exports::greentic::component::node::{
@@ -116,6 +127,13 @@ enum CallFailure {
 trait McpRouter {
     fn list_tools(&self) -> Result<Vec<router::Tool>, RouterError>;
     fn call_tool(&self, tool: &str, arguments: &Value) -> Result<router::Response, CallFailure>;
+    /// Resolve a persisted secret (e.g. an OAuth access token) by key from the
+    /// host secret store. Used by the OAuth self-gate so a token persisted in the
+    /// store — not just one passed as a call argument — lets the call proceed.
+    /// Returns `None` when absent, denied, or the host provides no secret store.
+    fn resolve_secret(&self, _key: &str) -> Option<String> {
+        None
+    }
 }
 
 struct WitRouter;
@@ -138,6 +156,33 @@ impl McpRouter for WitRouter {
             Err(_) => Err(CallFailure::Transport("router panicked".into())),
         }
     }
+
+    fn resolve_secret(&self, key: &str) -> Option<String> {
+        read_host_secret(key)
+    }
+}
+
+/// Read a secret from the host secret store over the `greentic:secrets-store`
+/// import. Compiled to the real WIT call on wasm; a no-op off-target so native
+/// unit/integration tests link without a host (they exercise `resolve_secret`
+/// via mock routers instead).
+#[cfg(target_arch = "wasm32")]
+fn read_host_secret(key: &str) -> Option<String> {
+    // Same `greentic:secrets-store` import the generated router uses to inject
+    // access_token; re-exported from `mod bindings` (see note there).
+    use bindings::host_secrets_store as secrets_store;
+    match secrets_store::get(key) {
+        Ok(Some(bytes)) => String::from_utf8(bytes)
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        _ => None,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_host_secret(_key: &str) -> Option<String> {
+    None
 }
 
 struct Adapter;
@@ -260,7 +305,27 @@ fn oauth_sign_in_card<R: McpRouter>(
     if has_token {
         telemetry::info(
             "oauth.token_present",
-            &[("tool", tool_name), ("provider", provider_id)],
+            &[
+                ("tool", tool_name),
+                ("provider", provider_id),
+                ("source", "argument"),
+            ],
+        );
+        return Ok(None);
+    }
+    // Not passed as a call argument — check the persisted secret store using the
+    // same key the router injects from (its `secret_requirements`). A token there
+    // means the router can authenticate the call, so proceed instead of gating.
+    if let Some(key) = oauth_secret_key(&meta)
+        && router.resolve_secret(&key).is_some()
+    {
+        telemetry::info(
+            "oauth.token_present",
+            &[
+                ("tool", tool_name),
+                ("provider", provider_id),
+                ("source", "secret-store"),
+            ],
         );
         return Ok(None);
     }
@@ -336,6 +401,31 @@ fn oauth_sign_in_card<R: McpRouter>(
         map.insert("protocol".to_string(), Value::String(PROTOCOL.to_string()));
     }
     Ok(Some(card))
+}
+
+/// Pick the secret-store key the OAuth token is persisted under, from the tool's
+/// `secret_requirements` meta (emitted by the generator, e.g.
+/// `auth.oauth2.<scheme>.access_token`). Prefers a required oauth2/access_token
+/// entry; falls back to the first required key.
+///
+/// TODO(credential-modes): support both ownership models (post-broker). Read
+/// `oauth.credential_mode` (default "user"); for "shared" use this base key
+/// (one credential per tenant/team), for "user" append the envelope `subject`
+/// (per-user key, e.g. `<base>::<subject>`) so each user signs in with their own.
+fn oauth_secret_key(meta: &Value) -> Option<String> {
+    let reqs = meta.get("secret_requirements")?.as_array()?;
+    let is_required = |r: &&Value| r.get("required").and_then(Value::as_bool).unwrap_or(false);
+    let key_of = |r: &Value| r.get("key").and_then(Value::as_str).map(str::to_string);
+    reqs.iter()
+        .filter(is_required)
+        .find(|r| {
+            r.get("key")
+                .and_then(Value::as_str)
+                .map(|k| k.contains("oauth2") || k.ends_with("access_token"))
+                .unwrap_or(false)
+        })
+        .and_then(key_of)
+        .or_else(|| reqs.iter().find(is_required).and_then(key_of))
 }
 
 fn parse_request(op: &str, input: &str) -> AdapterResult<ParsedRequest> {
@@ -472,6 +562,15 @@ fn render_tool_list(tools: &[router::Tool]) -> Value {
 }
 
 fn render_tool(tool: &router::Tool) -> Value {
+    let meta = meta_to_value(tool.meta.as_ref());
+    // OAuth bake-in: surface the tool's `oauth` declaration as a first-class field
+    // (hoisted from meta) so consumers — designer palette, admin creds wiring —
+    // can discover it without parsing the meta blob. Absent for non-OAuth tools.
+    let oauth = meta
+        .as_ref()
+        .and_then(|m| m.get("oauth"))
+        .filter(|v| v.is_object())
+        .cloned();
     json!({
         "name": tool.name,
         "title": tool.title,
@@ -479,7 +578,8 @@ fn render_tool(tool: &router::Tool) -> Value {
         "input_schema": parse_json_string(&tool.input_schema),
         "output_schema": tool.output_schema.as_ref().map(|s| parse_json_string(s)),
         "annotations": tool.annotations.as_ref().map(render_tool_annotations),
-        "meta": meta_to_value(tool.meta.as_ref()),
+        "oauth": oauth,
+        "meta": meta,
     })
 }
 
@@ -803,10 +903,16 @@ mod tests {
             input_schema: "{}".into(),
             output_schema: None,
             annotations: None,
-            meta: Some(vec![router::MetaEntry {
-                key: "oauth".into(),
-                value: r#"{"provider_id":"github","auth_url":"https://github.com/login/oauth/authorize","token_url":"https://github.com/login/oauth/access_token","scopes":["repo"],"token_input":"access_token"}"#.into(),
-            }]),
+            meta: Some(vec![
+                router::MetaEntry {
+                    key: "secret_requirements".into(),
+                    value: r#"[{"key":"auth.oauth2.githubOAuth.access_token","required":true,"format":"text"}]"#.into(),
+                },
+                router::MetaEntry {
+                    key: "oauth".into(),
+                    value: r#"{"provider_id":"github","auth_url":"https://github.com/login/oauth/authorize","token_url":"https://github.com/login/oauth/access_token","scopes":["repo"],"token_input":"access_token"}"#.into(),
+                },
+            ]),
         }
     }
 
@@ -856,6 +962,102 @@ mod tests {
         .expect("call should proceed");
         assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
         assert!(result.get("renderedCard").is_none());
+    }
+
+    // Router that holds a persisted token in its secret store but no token in the
+    // call arguments — exercises the secret-store branch of the self-gate.
+    struct SecretRouter {
+        tools: Vec<router::Tool>,
+        response: Option<router::Response>,
+        secret_key: String,
+        secret_value: Option<String>,
+    }
+
+    impl McpRouter for SecretRouter {
+        fn list_tools(&self) -> Result<Vec<router::Tool>, RouterError> {
+            Ok(self.tools.clone())
+        }
+        fn call_tool(
+            &self,
+            _tool: &str,
+            _arguments: &Value,
+        ) -> Result<router::Response, CallFailure> {
+            self.response
+                .clone()
+                .ok_or_else(|| CallFailure::Transport("no response".into()))
+        }
+        fn resolve_secret(&self, key: &str) -> Option<String> {
+            if key == self.secret_key {
+                self.secret_value.clone()
+            } else {
+                None
+            }
+        }
+    }
+
+    #[test]
+    fn oauth_tool_with_persisted_secret_proceeds_to_call() {
+        let router = SecretRouter {
+            tools: vec![oauth_tool("list_repos")],
+            response: Some(router::Response::Completed(router::ToolResult {
+                content: vec![router::ContentBlock::Text(router::TextContent {
+                    text: "repos".into(),
+                    annotations: None,
+                })],
+                structured_content: None,
+                progress: None,
+                meta: None,
+                is_error: None,
+            })),
+            secret_key: "auth.oauth2.githubOAuth.access_token".into(),
+            secret_value: Some("gho_persisted".into()),
+        };
+        // No access_token in arguments, but a token is persisted in the store →
+        // the gate resolves it and the call proceeds (no sign-in card).
+        let result = handle_invoke(
+            &router,
+            "",
+            r#"{"operation":"call","tool":"list_repos","arguments":{}}"#,
+        )
+        .expect("call should proceed via persisted token");
+        assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+        assert!(result.get("renderedCard").is_none());
+        assert!(result.get("needs_auth").is_none());
+    }
+
+    #[test]
+    fn oauth_tool_without_persisted_secret_returns_card() {
+        // Same tool, but the store has no token under the key → sign-in card.
+        let router = SecretRouter {
+            tools: vec![oauth_tool("list_repos")],
+            response: None,
+            secret_key: "auth.oauth2.githubOAuth.access_token".into(),
+            secret_value: None,
+        };
+        let result = handle_invoke(
+            &router,
+            "",
+            r#"{"operation":"call","tool":"list_repos","arguments":{}}"#,
+        )
+        .expect("self-gate should render");
+        assert_eq!(result.get("needs_auth"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn oauth_declaration_is_first_class_in_tool_list() {
+        let router = MockRouter {
+            tools: vec![oauth_tool("list_repos")],
+            response: None,
+        };
+        let result =
+            handle_invoke(&router, "", r#"{"operation":"list"}"#).expect("list should render");
+        let tool = result
+            .pointer("/result/tools/0")
+            .expect("one tool rendered");
+        assert_eq!(
+            tool.pointer("/oauth/provider_id"),
+            Some(&Value::String("github".into()))
+        );
     }
 
     #[test]
