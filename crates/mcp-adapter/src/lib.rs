@@ -171,6 +171,12 @@ fn handle_invoke<R: McpRouter>(router: &R, op: &str, input: &str) -> AdapterResu
         }
         Operation::Call => {
             let tool_name = request.tool.clone().unwrap_or_default();
+            // OAuth bake-in: if the tool declares OAuth (meta["oauth"]) and no
+            // token is supplied, return the sign-in card instead of calling the
+            // API. The card rides the node output's `renderedCard`.
+            if let Some(card) = oauth_sign_in_card(router, &tool_name, &request.arguments)? {
+                return Ok(card);
+            }
             let response = router
                 .call_tool(&tool_name, &request.arguments)
                 .map_err(|err| Box::new(map_call_error(err, &tool_name)))?;
@@ -181,6 +187,88 @@ fn handle_invoke<R: McpRouter>(router: &R, op: &str, input: &str) -> AdapterResu
             }
         }
     }
+}
+
+/// OAuth bake-in self-gate: if the named tool carries an `oauth` declaration in
+/// its meta and the call has no usable token, render the sign-in card (via the
+/// export-free `oauth-card-core`) and return it as the node output. Returns
+/// `Ok(None)` when there's no OAuth requirement or a token is already present,
+/// so the normal API call proceeds.
+fn oauth_sign_in_card<R: McpRouter>(
+    router: &R,
+    tool_name: &str,
+    arguments: &Value,
+) -> AdapterResult<Option<Value>> {
+    let tools = router
+        .list_tools()
+        .map_err(|err| Box::new(transport_error(err, Some(tool_name.to_string()))))?;
+    let Some(tool) = tools.iter().find(|t| t.name == tool_name) else {
+        return Ok(None);
+    };
+    let Some(meta) = meta_to_value(tool.meta.as_ref()) else {
+        return Ok(None);
+    };
+    let Some(oauth) = meta.get("oauth").filter(|v| v.is_object()) else {
+        return Ok(None);
+    };
+
+    let token_input = oauth
+        .get("token_input")
+        .and_then(Value::as_str)
+        .unwrap_or("access_token");
+    let has_token = arguments
+        .get(token_input)
+        .and_then(Value::as_str)
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+    if has_token {
+        return Ok(None);
+    }
+
+    let provider_id = oauth
+        .get("provider_id")
+        .and_then(Value::as_str)
+        .unwrap_or("oauth-provider");
+    let subject = arguments
+        .get("subject")
+        .and_then(Value::as_str)
+        .unwrap_or("user");
+    let scopes = oauth.get("scopes").cloned().unwrap_or_else(|| json!([]));
+
+    // With a public client_id available (e.g. injected by admin config), drive
+    // start-sign-in so the card renders a Connect button; otherwise fall back to
+    // a status-card sign-in prompt (no consent URL needed).
+    let auth_url = oauth.get("auth_url").and_then(Value::as_str);
+    let client_id = oauth.get("client_id").and_then(Value::as_str);
+    let mut payload = json!({
+        "provider_id": provider_id,
+        "subject": subject,
+        "scopes": scopes,
+    });
+    if let (Some(auth_url), Some(client_id)) = (auth_url, client_id) {
+        payload["mode"] = json!("start-sign-in");
+        payload["auth_url"] = json!(auth_url);
+        payload["client_id"] = json!(client_id);
+        if let Some(redirect_uri) = oauth.get("redirect_uri") {
+            payload["redirect_uri"] = redirect_uri.clone();
+        }
+    } else {
+        payload["mode"] = json!("status-card");
+    }
+
+    let mut card = oauth_card_core::handle_message_json(&payload).map_err(|err| {
+        Box::new(config_error(
+            format!("oauth card render failed: {err}"),
+            Some(tool_name.to_string()),
+            Value::Null,
+        ))
+    })?;
+    if let Value::Object(map) = &mut card {
+        map.insert("ok".to_string(), Value::Bool(true));
+        map.insert("needs_auth".to_string(), Value::Bool(true));
+        map.insert("protocol".to_string(), Value::String(PROTOCOL.to_string()));
+    }
+    Ok(Some(card))
 }
 
 fn parse_request(op: &str, input: &str) -> AdapterResult<ParsedRequest> {
@@ -638,6 +726,69 @@ mod tests {
             annotations: None,
             meta: None,
         }
+    }
+
+    fn oauth_tool(name: &str) -> router::Tool {
+        router::Tool {
+            name: name.into(),
+            title: None,
+            description: "needs oauth".into(),
+            input_schema: "{}".into(),
+            output_schema: None,
+            annotations: None,
+            meta: Some(vec![router::MetaEntry {
+                key: "oauth".into(),
+                value: r#"{"provider_id":"github","auth_url":"https://github.com/login/oauth/authorize","token_url":"https://github.com/login/oauth/access_token","scopes":["repo"],"token_input":"access_token"}"#.into(),
+            }]),
+        }
+    }
+
+    #[test]
+    fn oauth_tool_without_token_returns_sign_in_card() {
+        let router = MockRouter {
+            tools: vec![oauth_tool("list_repos")],
+            response: None,
+        };
+        let result = handle_invoke(
+            &router,
+            "",
+            r#"{"operation":"call","tool":"list_repos","arguments":{}}"#,
+        )
+        .expect("self-gate should render");
+        assert_eq!(result.get("needs_auth"), Some(&Value::Bool(true)));
+        assert_eq!(
+            result.get("status"),
+            Some(&Value::String("needs-sign-in".into()))
+        );
+        assert_eq!(
+            result.pointer("/renderedCard/type"),
+            Some(&Value::String("AdaptiveCard".into()))
+        );
+    }
+
+    #[test]
+    fn oauth_tool_with_token_proceeds_to_call() {
+        let router = MockRouter {
+            tools: vec![oauth_tool("list_repos")],
+            response: Some(router::Response::Completed(router::ToolResult {
+                content: vec![router::ContentBlock::Text(router::TextContent {
+                    text: "repos".into(),
+                    annotations: None,
+                })],
+                structured_content: None,
+                progress: None,
+                meta: None,
+                is_error: None,
+            })),
+        };
+        let result = handle_invoke(
+            &router,
+            "",
+            r#"{"operation":"call","tool":"list_repos","arguments":{"access_token":"gho_live"}}"#,
+        )
+        .expect("call should proceed");
+        assert_eq!(result.get("ok"), Some(&Value::Bool(true)));
+        assert!(result.get("renderedCard").is_none());
     }
 
     #[test]

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Pre-commit hook: lint gate mirroring the fast parts of ci/local_check.sh
+# (tracked-artifact guard, canonical-import guard, fmt, clippy) + cargo update.
+# Builds/tests are NOT run here (too slow) — run via ci/local_check.sh or CI.
+#
+# Enable (per clone): git config core.hooksPath .githooks
+# Bypass: PRECOMMIT_SKIP=1 git commit ...   or   git commit --no-verify
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+if [ "${PRECOMMIT_SKIP:-0}" = "1" ]; then
+  echo "pre-commit: skipped (PRECOMMIT_SKIP=1)"
+  exit 0
+fi
+
+echo "==> pre-commit: cargo update --workspace"
+cargo update --workspace
+git add Cargo.lock 2>/dev/null || true
+
+if command -v rg >/dev/null 2>&1; then
+  echo "==> pre-commit: block tracked build artifacts"
+  matches="$(git ls-files | rg -n '(^|/)(target|dist|build|node_modules|coverage)/' || true)"
+  if [ -n "$matches" ]; then
+    echo "ERROR: tracked build artifacts detected (git rm -r --cached <path>):"
+    echo "$matches"
+    exit 1
+  fi
+  echo "==> pre-commit: canonical greentic-interfaces import guard"
+  if rg -n 'greentic_interfaces::bindings::|\bbindings::greentic::' \
+        --glob '!**/target/**' --glob '!.codex/**' --glob '!ci/local_check.sh' \
+        --glob '!.githooks/**' .; then
+    echo "ERROR: use greentic_interfaces::canonical instead of bindings::*"
+    exit 1
+  fi
+fi
+
+echo "==> pre-commit: cargo fmt --all -- --check"
+cargo fmt --all -- --check
+
+echo "==> pre-commit: cargo clippy --workspace --all-targets -- -D warnings"
+cargo clippy --workspace --all-targets -- -D warnings
+
+echo "pre-commit: checks passed (build/test run in CI / ci/local_check.sh)."
