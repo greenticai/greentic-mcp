@@ -344,19 +344,46 @@ fn oauth_sign_in_card<R: McpRouter>(
     // start-sign-in so the card renders a Connect button; otherwise fall back to
     // a status-card sign-in prompt (no consent URL needed).
     let auth_url = oauth.get("auth_url").and_then(Value::as_str);
-    let client_id = oauth.get("client_id").and_then(Value::as_str);
+    // The OAuth app client_id is provided by the bundle AUTHOR at setup time and
+    // stored under the declaration's `setup_fields` client_id key (pack-scoped).
+    // Read it from the secret store so the card can render a real Connect button.
+    // The client_secret never leaves the host (used only by /oauth/callback).
+    let client_id_key = oauth
+        .get("setup_fields")
+        .and_then(Value::as_array)
+        .and_then(|fields| {
+            fields.iter().find_map(|f| {
+                f.get("key")
+                    .and_then(Value::as_str)
+                    .filter(|k| k.ends_with("client_id"))
+                    .map(str::to_string)
+            })
+        });
+    let client_id = client_id_key
+        .as_deref()
+        .and_then(|k| router.resolve_secret(k));
+    // OpenAPI scheme name (e.g. `githubOAuth`) from the client_id key — carried in
+    // `state` so /oauth/callback can resolve the pack-scoped client_secret + token.
+    let scheme = client_id_key
+        .as_deref()
+        .and_then(|k| {
+            k.strip_prefix("auth.oauth2.")
+                .and_then(|r| r.strip_suffix(".client_id"))
+        })
+        .unwrap_or(provider_id);
     let mut payload = json!({
         "provider_id": provider_id,
         "subject": subject,
         "scopes": scopes,
     });
-    if let (Some(auth_url), Some(client_id)) = (auth_url, client_id) {
+    if let (Some(auth_url), Some(client_id)) = (auth_url, client_id.as_deref()) {
         payload["mode"] = json!("start-sign-in");
         payload["auth_url"] = json!(auth_url);
         payload["client_id"] = json!(client_id);
-        if let Some(redirect_uri) = oauth.get("redirect_uri") {
-            payload["redirect_uri"] = redirect_uri.clone();
-        }
+        // Encode the scheme as the OAuth `state` so the host callback can resolve
+        // the right pack-scoped secrets. No redirect_uri → the provider uses the
+        // OAuth App's registered callback (`/oauth/callback/<provider>`).
+        payload["state_id"] = json!(format!("{scheme}|{provider_id}"));
     } else {
         payload["mode"] = json!("status-card");
     }
