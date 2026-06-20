@@ -128,6 +128,17 @@ impl DefaultRunner {
     ///
     /// Note: `runtime.fuel` and `wallclock_timeout` do not apply to this call;
     /// those limits are engine-level and only enforced during [`Runner::run`].
+    ///
+    /// Bounding caveat: unlike [`Runner::run`] (which runs `run_sync` on a
+    /// dedicated thread guarded by `recv_timeout`), this call runs instantiation
+    /// and `list-tools` directly on the caller's thread. Epoch interruption is
+    /// armed but no epoch-ticker drives it, so a component that hangs during
+    /// `list-tools` blocks the calling thread indefinitely. Callers off the async
+    /// runtime (the `local-wasm` MCP path uses `spawn_blocking`) keep the async
+    /// executor responsive, but the blocking thread is consumed until the hang
+    /// resolves. Acceptable for Phase 1 because the local cache is operator-seeded
+    /// and trusted. TODO(phase-2): add a dedicated-thread/epoch-ticker wall-clock
+    /// guard here once untrusted `local-wasm` components can be registered.
     pub fn list_tools_router(
         &self,
         artifact: &VerifiedArtifact,
