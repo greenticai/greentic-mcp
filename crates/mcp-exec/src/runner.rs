@@ -144,11 +144,10 @@ impl DefaultRunner {
         linker.allow_shadowing(true);
         add_wasi_to_linker(&mut linker).map_err(|err| RunnerError::Internal(err.to_string()))?;
 
+        // Add wasi-tls types and turn on the feature in linker (mirrors run_sync)
         let mut opts = LinkOptions::default();
         opts.tls(true);
-        wasmtime_wasi_tls::add_to_linker(&mut linker, &mut opts, |h: &mut StoreState| {
-            h.wasi_tls()
-        })?;
+        wasmtime_wasi_tls::p2::add_to_linker(&mut linker, &opts)?;
 
         add_wasi_http_to_linker(&mut linker)?;
 
