@@ -125,6 +125,9 @@ impl DefaultRunner {
     /// Mirrors the engine/linker/store setup of [`run_sync`] up to instantiation,
     /// then delegates to [`try_list_tools_router`] instead of call-tool.
     /// Returns `None` when the component does not export the router interface.
+    ///
+    /// Note: `runtime.fuel` and `wallclock_timeout` do not apply to this call;
+    /// those limits are engine-level and only enforced during [`Runner::run`].
     pub fn list_tools_router(
         &self,
         artifact: &VerifiedArtifact,

@@ -18,6 +18,11 @@ pub use config::{DynSecretsStore, ExecConfig, RuntimePolicy, SecretsStore, Verif
 pub use error::{ExecError, RunnerError};
 pub use store::{ToolInfo, ToolStore};
 
+use greentic_types::TenantCtx;
+use serde_json::{Value, json};
+
+use crate::runner::Runner;
+
 /// One tool advertised by a `wasix:mcp/router` component.
 #[derive(Clone, Debug)]
 pub struct ToolDef {
@@ -25,11 +30,6 @@ pub struct ToolDef {
     pub description: String,
     pub input_schema: Value,
 }
-
-use greentic_types::TenantCtx;
-use serde_json::{Value, json};
-
-use crate::runner::Runner;
 
 #[derive(Clone, Debug)]
 pub struct ExecRequest {
