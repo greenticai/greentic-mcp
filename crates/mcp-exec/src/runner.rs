@@ -24,7 +24,7 @@ use wasmtime_wasi_tls::{WasiTlsCtx, WasiTlsCtxBuilder, WasiTlsCtxView, WasiTlsVi
 use crate::ExecRequest;
 use crate::config::{DynSecretsStore, RuntimePolicy};
 use crate::error::RunnerError;
-use crate::router::try_call_tool_router;
+use crate::router::{Tool, try_call_tool_router, try_list_tools_router};
 use crate::verify::VerifiedArtifact;
 
 const LEGACY_EXEC_INTERFACE: &str = "legacy:exec/exec";
@@ -116,6 +116,52 @@ impl Runner for DefaultRunner {
                 Err(RunnerError::Internal("blocking runner task failed".into()))
             }
         }
+    }
+}
+
+impl DefaultRunner {
+    /// List the tools exported by a `wasix:mcp/router` component.
+    ///
+    /// Mirrors the engine/linker/store setup of [`run_sync`] up to instantiation,
+    /// then delegates to [`try_list_tools_router`] instead of call-tool.
+    /// Returns `None` when the component does not export the router interface.
+    pub fn list_tools_router(
+        &self,
+        artifact: &VerifiedArtifact,
+        ctx: ExecutionContext<'_>,
+    ) -> Result<Option<Vec<Tool>>, RunnerError> {
+        let engine = self.engine.clone();
+        let artifact = artifact.clone();
+        let http_enabled = ctx.http_enabled;
+        let secrets_store = ctx.secrets_store.clone();
+
+        let component = Component::from_binary(&engine, artifact.resolved.bytes.as_ref())?;
+
+        let mut linker = Linker::new(&engine);
+        linker.allow_shadowing(true);
+        add_wasi_to_linker(&mut linker).map_err(|err| RunnerError::Internal(err.to_string()))?;
+
+        let mut opts = LinkOptions::default();
+        opts.tls(true);
+        wasmtime_wasi_tls::add_to_linker(&mut linker, &mut opts, |h: &mut StoreState| {
+            h.wasi_tls()
+        })?;
+
+        add_wasi_http_to_linker(&mut linker)?;
+
+        runner_host_http::add_runner_host_http_to_linker(&mut linker, |state: &mut StoreState| {
+            state
+        })
+        .map_err(|err| RunnerError::Internal(err.to_string()))?;
+        runner_host_kv::add_runner_host_kv_to_linker(&mut linker, |state: &mut StoreState| state)
+            .map_err(|err| RunnerError::Internal(err.to_string()))?;
+        add_secrets_to_linker(&mut linker)?;
+
+        let mut store = Store::new(&engine, StoreState::new(http_enabled, secrets_store, None));
+        store.set_epoch_deadline(u64::MAX / 2);
+
+        try_list_tools_router(&component, &mut linker, &mut store)
+            .map_err(|err| RunnerError::Internal(err.to_string()))
     }
 }
 
