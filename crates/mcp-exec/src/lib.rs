@@ -23,14 +23,6 @@ use serde_json::{Value, json};
 
 use crate::runner::Runner;
 
-/// One tool advertised by a `wasix:mcp/router` component.
-#[derive(Clone, Debug)]
-pub struct ToolDef {
-    pub name: String,
-    pub description: String,
-    pub input_schema: Value,
-}
-
 #[derive(Clone, Debug)]
 pub struct ExecRequest {
     pub component: String,
@@ -107,43 +99,6 @@ pub fn exec(req: ExecRequest, cfg: &ExecConfig) -> Result<Value, ExecError> {
     }
 
     Ok(value)
-}
-
-/// List the tools a local `wasix:mcp` component exports (the `tools/list`
-/// equivalent), resolving and verifying via the same pipeline as [`exec`].
-///
-/// Synchronous (blocking Wasmtime) — callers on an async runtime must wrap this
-/// in `spawn_blocking`.
-pub fn list_tools(component: &str, cfg: &ExecConfig) -> Result<Vec<ToolDef>, ExecError> {
-    let resolved = resolve::resolve(component, &cfg.store)
-        .map_err(|err| ExecError::resolve(component, err))?;
-    let verified = verify::verify(component, resolved, &cfg.security)
-        .map_err(|err| ExecError::verification(component, err))?;
-
-    let runner = runner::DefaultRunner::new(&cfg.runtime)
-        .map_err(|err| ExecError::runner(component, err))?;
-
-    let tools = runner
-        .list_tools_router(
-            &verified,
-            runner::ExecutionContext {
-                runtime: &cfg.runtime,
-                http_enabled: cfg.http_enabled,
-                secrets_store: cfg.secrets_store.clone(),
-            },
-        )
-        .map_err(|err| ExecError::runner(component, err))?
-        .unwrap_or_default();
-
-    Ok(tools
-        .into_iter()
-        .map(|t| ToolDef {
-            name: t.name,
-            description: t.description,
-            input_schema: serde_json::from_str(&t.input_schema)
-                .unwrap_or_else(|_| serde_json::json!({})),
-        })
-        .collect())
 }
 
 #[cfg(test)]

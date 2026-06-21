@@ -49,6 +49,7 @@ pub(crate) fn try_call_tool_router(
     Ok(Some(render_response(&response)))
 }
 
+#[allow(dead_code)]
 pub(crate) fn try_list_tools_router(
     component: &wasmtime::component::Component,
     linker: &mut Linker<StoreState>,
