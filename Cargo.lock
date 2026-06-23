@@ -1165,7 +1165,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-mcp"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -1188,7 +1188,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-mcp-adapter"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "greentic-interfaces-guest",
  "greentic-telemetry",
@@ -1204,7 +1204,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-mcp-exec"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "async-trait",
