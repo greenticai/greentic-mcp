@@ -4,5 +4,10 @@ package greentic:mcp-adapter@0.4.3;
 
 world adapter {
   import wasix:mcp/router@25.6.18;
+  // Resolve a persisted OAuth token (self-gate) from the same secret store the
+  // generated router injects from. Binding is shared with the canonical
+  // greentic-interfaces-guest crate (see the `with` map in lib.rs) so there is a
+  // single secrets-store import after composition.
+  import greentic:secrets-store/secrets-store@1.0.0;
   export greentic:component/node@0.6.0;
 }
