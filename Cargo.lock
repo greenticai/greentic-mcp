@@ -1911,7 +1911,9 @@ dependencies = [
 
 [[package]]
 name = "oauth-card-core"
-version = "0.1.2"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c577570925e14d4a124b3203f915fa01a3493f00d68f18b0b28a4671d5d72c30"
 dependencies = [
  "serde",
  "serde_json",

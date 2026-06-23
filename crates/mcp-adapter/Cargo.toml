@@ -26,7 +26,7 @@ telemetry = ["dep:greentic-telemetry", "greentic-telemetry/wit-guest"]
 greentic-interfaces-guest.workspace = true
 # Export-free OAuth card logic (decision + Adaptive Card render). Path dep on a
 # sibling checkout for now; to be published before merge.
-oauth-card-core = { path = "../../../component-oauth-card/crates/oauth-card-core" }
+oauth-card-core = "0.1.5"
 greentic-telemetry = { version = "0.5", default-features = false, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_cbor = "0.11"
