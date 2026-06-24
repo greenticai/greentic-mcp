@@ -1106,9 +1106,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces"
-version = "1.1.0-dev.26993916101"
+version = "1.2.0-research.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "200a88575ee91a8ce1ea0ce00851de4582bbf7d48409b9885bd07d14d828639a"
+checksum = "a27e76f5a7de66ed4d85de1b6cf50ed751f62d3572012d30f2e6281e9989f7b0"
 dependencies = [
  "anyhow",
  "constant_time_eq",
@@ -1124,9 +1124,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces-guest"
-version = "1.1.0-dev.26993916101"
+version = "1.2.0-research.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08e63a397563e11b69fff0168499c85a38f6e4a54ed2b5992a7cd6119b3598c4"
+checksum = "1261678c9dd741547e3130781038a02be79454b4a1983f55a2b7bf57fc1f1c17"
 dependencies = [
  "greentic-interfaces",
  "greentic-types",
@@ -1137,9 +1137,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces-wasmtime"
-version = "1.1.0-dev.26993916101"
+version = "1.2.0-research.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfe092a984ea64c11afa9a23dea925b4ab1908e78a3ef5703374a9087922ff4f"
+checksum = "1a795f97b9f753a17c46d2e3bd26450186b431c4ec46780d512c06f48ddbbefc"
 dependencies = [
  "anyhow",
  "camino",
@@ -1153,7 +1153,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-mcp"
-version = "1.1.0-dev.0"
+version = "1.2.0-research.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1176,7 +1176,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-mcp-adapter"
-version = "1.1.0-dev.0"
+version = "1.2.0-research.0"
 dependencies = [
  "greentic-interfaces-guest",
  "serde",
@@ -1190,7 +1190,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-mcp-exec"
-version = "1.1.0-dev.0"
+version = "1.2.0-research.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1218,9 +1218,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-types"
-version = "1.1.0-dev.27002562828"
+version = "1.2.0-research.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a3b4a9be286664187b8543099ab922bd8e2293bcdbb2ce4d9bd796d600ad3ff"
+checksum = "7d2a079903dae4d40cff9b2627feea1b19c47343b1066b55d7335ddfb055f7ac"
 dependencies = [
  "anyhow",
  "blake3",
