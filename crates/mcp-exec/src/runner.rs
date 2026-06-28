@@ -18,7 +18,8 @@ use wasmtime_wasi_http::WasiHttpCtx;
 use wasmtime_wasi_http::p2::{
     WasiHttpCtxView, WasiHttpView, add_only_http_to_linker_sync as add_wasi_http_to_linker,
 };
-use wasmtime_wasi_tls::{LinkOptions, WasiTls, WasiTlsCtx, WasiTlsCtxBuilder};
+use wasmtime_wasi_tls::p2::{LinkOptions, add_to_linker as add_wasi_tls_to_linker};
+use wasmtime_wasi_tls::{WasiTlsCtx, WasiTlsCtxBuilder, WasiTlsCtxView, WasiTlsView};
 
 use crate::ExecRequest;
 use crate::config::{DynSecretsStore, RuntimePolicy};
@@ -143,7 +144,7 @@ fn run_sync(
     // Add wasi-tls types and turn on the feature in linker
     let mut opts = LinkOptions::default();
     opts.tls(true);
-    wasmtime_wasi_tls::add_to_linker(&mut linker, &mut opts, |h: &mut StoreState| h.wasi_tls())?;
+    add_wasi_tls_to_linker(&mut linker, &opts)?;
 
     // Add wasi-http types and turn on the feature in linker
     add_wasi_http_to_linker(&mut linker)?;
@@ -394,10 +395,6 @@ impl StoreState {
         &mut self.table
     }
 
-    pub fn wasi_tls(&mut self) -> WasiTls<'_> {
-        WasiTls::new(&self.wasi_tls_ctx, &mut self.table)
-    }
-
     pub fn wasi_http_ctx_mut(&mut self) -> &mut WasiHttpCtx {
         &mut self.wasi_http_ctx
     }
@@ -410,6 +407,7 @@ impl StoreState {
         if self.http_client.is_none() {
             // Lazily construct a blocking client so hosts that never expose
             // outbound HTTP do not pay the initialization cost.
+            crate::ensure_rustls_crypto_provider();
             let client = reqwest::blocking::Client::builder()
                 .use_rustls_tls()
                 .timeout(std::time::Duration::from_secs(30))
@@ -561,6 +559,15 @@ impl WasiHttpView for StoreState {
             ctx: &mut self.wasi_http_ctx,
             table: &mut self.table,
             hooks: Default::default(),
+        }
+    }
+}
+
+impl WasiTlsView for StoreState {
+    fn tls(&mut self) -> WasiTlsCtxView<'_> {
+        WasiTlsCtxView {
+            ctx: &mut self.wasi_tls_ctx,
+            table: &mut self.table,
         }
     }
 }
@@ -1001,13 +1008,14 @@ mod tests {
         );
         assert!(state.http_client().is_ok());
         let _ = state.table_mut();
-        let _ = state.wasi_tls();
+        let _ = state.tls();
         let _ = state.wasi_http_ctx_mut();
         state.kv_put("ns".into(), "key".into(), "val".to_string());
     }
 
     #[test]
     fn apply_headers_parse_success_and_rejects_bad_inputs() {
+        crate::ensure_rustls_crypto_provider();
         let client = reqwest::blocking::Client::new();
 
         let request = apply_headers(
