@@ -23,6 +23,10 @@ use serde_json::{Value, json};
 
 use crate::runner::Runner;
 
+pub(crate) fn ensure_rustls_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 #[derive(Clone, Debug)]
 pub struct ExecRequest {
     pub component: String,
