@@ -185,7 +185,6 @@ fn compute_sha256(path: &Path) -> Result<String> {
 fn download_with_retry(url: &str, dest: &Path) -> Result<()> {
     use std::thread::sleep;
 
-    crate::ensure_rustls_crypto_provider();
     let client = reqwest::blocking::Client::builder()
         .use_rustls_tls()
         .timeout(Duration::from_secs(30))
