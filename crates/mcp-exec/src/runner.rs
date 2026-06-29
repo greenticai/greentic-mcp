@@ -18,7 +18,7 @@ use wasmtime_wasi_http::WasiHttpCtx;
 use wasmtime_wasi_http::p2::{
     WasiHttpCtxView, WasiHttpView, add_only_http_to_linker_sync as add_wasi_http_to_linker,
 };
-use wasmtime_wasi_tls::p2::{LinkOptions, add_to_linker as add_wasi_tls_to_linker};
+use wasmtime_wasi_tls::p2::LinkOptions;
 use wasmtime_wasi_tls::{WasiTlsCtx, WasiTlsCtxBuilder, WasiTlsCtxView, WasiTlsView};
 
 use crate::ExecRequest;
@@ -144,7 +144,7 @@ fn run_sync(
     // Add wasi-tls types and turn on the feature in linker
     let mut opts = LinkOptions::default();
     opts.tls(true);
-    add_wasi_tls_to_linker(&mut linker, &opts)?;
+    wasmtime_wasi_tls::p2::add_to_linker(&mut linker, &opts)?;
 
     // Add wasi-http types and turn on the feature in linker
     add_wasi_http_to_linker(&mut linker)?;
@@ -365,12 +365,28 @@ pub struct StoreState {
 unsafe impl Send for StoreState {}
 unsafe impl Sync for StoreState {}
 
+/// Install a process-wide rustls crypto provider exactly once.
+///
+/// wasmtime-wasi-tls 45's `WasiTlsCtxBuilder::new()` eagerly constructs
+/// `RustlsProvider::default()`, which calls `rustls::ClientConfig::builder()`.
+/// That builder panics when rustls cannot pick a process-default
+/// `CryptoProvider` — and both `aws-lc-rs` and `ring` are linked in this tree.
+/// Pin the default to `aws-lc-rs` (matching greentic-runner) so the choice is
+/// deterministic. `install_default` is a no-op if a provider is already set.
+fn ensure_rustls_provider() {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    });
+}
+
 impl StoreState {
     pub fn new(
         http_enabled: bool,
         secrets_store: Option<DynSecretsStore>,
         tenant: Option<greentic_types::TenantCtx>,
     ) -> Self {
+        ensure_rustls_provider();
         let mut builder = WasiCtxBuilder::new();
         builder.inherit_stdio().inherit_env();
         if http_enabled {
@@ -407,7 +423,6 @@ impl StoreState {
         if self.http_client.is_none() {
             // Lazily construct a blocking client so hosts that never expose
             // outbound HTTP do not pay the initialization cost.
-            crate::ensure_rustls_crypto_provider();
             let client = reqwest::blocking::Client::builder()
                 .use_rustls_tls()
                 .timeout(std::time::Duration::from_secs(30))
@@ -553,21 +568,21 @@ impl WasiView for StoreState {
     }
 }
 
+impl WasiTlsView for StoreState {
+    fn tls(&mut self) -> WasiTlsCtxView<'_> {
+        WasiTlsCtxView {
+            ctx: &mut self.wasi_tls_ctx,
+            table: &mut self.table,
+        }
+    }
+}
+
 impl WasiHttpView for StoreState {
     fn http(&mut self) -> WasiHttpCtxView<'_> {
         WasiHttpCtxView {
             ctx: &mut self.wasi_http_ctx,
             table: &mut self.table,
             hooks: Default::default(),
-        }
-    }
-}
-
-impl WasiTlsView for StoreState {
-    fn tls(&mut self) -> WasiTlsCtxView<'_> {
-        WasiTlsCtxView {
-            ctx: &mut self.wasi_tls_ctx,
-            table: &mut self.table,
         }
     }
 }
@@ -1008,14 +1023,13 @@ mod tests {
         );
         assert!(state.http_client().is_ok());
         let _ = state.table_mut();
-        let _ = state.tls();
+        let _ = WasiTlsView::tls(&mut state);
         let _ = state.wasi_http_ctx_mut();
         state.kv_put("ns".into(), "key".into(), "val".to_string());
     }
 
     #[test]
     fn apply_headers_parse_success_and_rejects_bad_inputs() {
-        crate::ensure_rustls_crypto_provider();
         let client = reqwest::blocking::Client::new();
 
         let request = apply_headers(
