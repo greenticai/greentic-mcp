@@ -1112,9 +1112,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces"
-version = "1.1.0"
+version = "1.2.0-research.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9deb2e524a4e233d32e2d1c10b4ba1090c751b0fe8b27df717c1c95c96a54367"
+checksum = "60390b75ad84b3b17560d82517a4708840fac78b8c67d79f8694660d34f70e03"
 dependencies = [
  "anyhow",
  "constant_time_eq",
@@ -1130,9 +1130,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces-guest"
-version = "1.1.0"
+version = "1.2.0-research.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "811761b20ede063c22285dec70ff48024a4667d0b7d4e4482f5afb031fbdbbd1"
+checksum = "b6700baa45ed9af6fdc59fb8894cb58d04ed02d9048b1976d4e9597e7c7edd76"
 dependencies = [
  "greentic-interfaces",
  "greentic-types",
@@ -1143,9 +1143,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces-wasmtime"
-version = "1.1.0"
+version = "1.2.0-research.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "594124a27b9c24368f67cc9a3bd70fc17b9052b08ec1fe8367835255922f7f3b"
+checksum = "c4530a9f3da3c36807144c58023127973b8ed3d5b76b45c51e5e8a50daf1cd2e"
 dependencies = [
  "anyhow",
  "camino",
@@ -1159,7 +1159,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-mcp"
-version = "1.1.0-dev.1"
+version = "1.2.0-dev.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1182,7 +1182,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-mcp-adapter"
-version = "1.1.0-dev.1"
+version = "1.2.0-dev.0"
 dependencies = [
  "greentic-interfaces-guest",
  "greentic-telemetry",
@@ -1198,7 +1198,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-mcp-exec"
-version = "1.1.0-dev.1"
+version = "1.2.0-dev.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1244,9 +1244,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-types"
-version = "1.1.0"
+version = "1.2.0-research.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4c3b9f4b88628d803db2c4841184cccd34059f167fcc295d9c341eecef28ef6"
+checksum = "55899a33b87d4cd7d87f7dd91fe840eac56440d582343f52552f29c7673e1ec4"
 dependencies = [
  "anyhow",
  "blake3",
