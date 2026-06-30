@@ -21,8 +21,8 @@ anyhow = "1.0"
 async-trait = "0.1"
 base64 = "0.22"
 cap-std = "4"
-greentic-interfaces-wasmtime = ">=1.1.0-dev, <1.2.0-0"
-greentic-types = ">=1.1.0-dev, <1.2.0-0"
+greentic-interfaces-wasmtime = ">=1.1.0-0, <1.2.0-0"
+greentic-types = ">=1.1.0-0, <1.2.0-0"
 hex = "0.4"
 indexmap = "2"
 serde_json = "1"
@@ -40,7 +40,7 @@ features = [
 ]
 
 [workspace.dependencies.greentic-interfaces-guest]
-version = ">=1.1.0-dev, <1.2.0-0"
+version = ">=1.1.0-0, <1.2.0-0"
 default-features = false
 features = [
     "guest",
