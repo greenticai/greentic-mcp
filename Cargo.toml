@@ -14,7 +14,7 @@ edition = "2024"
 rust-version = "1.91"
 license = "MIT"
 repository = "https://github.com/greenticai/greentic-mcp"
-version = "1.2.0"
+version = "1.1.1"
 
 [workspace.dependencies]
 anyhow = "1.0"
@@ -47,7 +47,7 @@ features = [
 ]
 
 [workspace.dependencies.greentic-mcp-exec]
-version = ">=1.2.0-0, <1.3.0-0"
+version = ">=1.1.1-0, <1.2.0-0"
 path = "crates/mcp-exec"
 
 [workspace.dependencies.rand]
