@@ -161,6 +161,14 @@ models MCP message shapes and executes tools locally via WIT/wasm host calls.
 - Implement OCI and Warg resolvers, including signature verification.
 - Publish spec docs and add end-to-end examples powered by real tool WASMs.
 
+## Dev builds
+
+Every Dev Publish run on `develop` creates a GitHub prerelease tagged
+`v1.2.<run-id>` carrying prebuilt `greentic-mcp-dev` archives, which is what
+`gtc install --channel dev` installs. The binary inside reports that same
+`1.2.<run-id>` from `--version`, so any dev binary can be traced back to the
+release and the CI run that built it.
+
 ## License
 
 Dual-licensed under either MIT or Apache-2.0. See `LICENSE-MIT` and
