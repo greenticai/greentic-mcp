@@ -2015,7 +2015,31 @@ mod tests {
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
-        assert_eq!(tools.len(), 1);
+        // Match by name rather than by count, so adding a tool to the shared
+        // router_echo fixture does not break this test.
+        let by_name = |name: &str| {
+            tools
+                .iter()
+                .find(|t| t.get("name").and_then(Value::as_str) == Some(name))
+                .unwrap_or_else(|| panic!("expected a `{name}` tool in {tools:?}"))
+                .clone()
+        };
+
+        let echo = by_name("echo");
+        assert!(
+            echo.get("output_schema").is_none_or(Value::is_null),
+            "echo declares no output schema: {echo:?}"
+        );
+
+        // The fixture's `quote` tool declares one, and the adapter surfaces it.
+        let quote = by_name("quote");
+        assert_eq!(
+            quote
+                .pointer("/output_schema/properties/annual_premium/type")
+                .and_then(Value::as_str),
+            Some("number"),
+            "declared output schema rendered by the adapter: {quote:?}"
+        );
 
         let call = handle_invoke(
             &router,

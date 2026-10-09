@@ -23,6 +23,26 @@ use serde_json::{Value, json};
 
 use crate::runner::Runner;
 
+/// One tool advertised by a `wasix:mcp/router` component.
+#[derive(Clone, Debug)]
+pub struct ToolDef {
+    pub name: String,
+    pub description: String,
+    pub input_schema: Value,
+    /// The tool's declared output schema, or `None` when it declares none.
+    ///
+    /// `None` (undeclared) and `Some(json!({}))` (declared, but empty) are
+    /// deliberately distinct: a caller asking "what fields does this tool
+    /// return?" needs those two answers to differ, so an absent schema is
+    /// never defaulted to an empty object.
+    ///
+    /// The value is passed through as the tool declared it and is *not*
+    /// normalised or validated here — a declaration that is not valid JSON
+    /// surfaces verbatim as [`Value::String`], leaving a consumer that cares
+    /// free to detect it and warn.
+    pub output_schema: Option<Value>,
+}
+
 #[derive(Clone, Debug)]
 pub struct ExecRequest {
     pub component: String,
@@ -99,6 +119,63 @@ pub fn exec(req: ExecRequest, cfg: &ExecConfig) -> Result<Value, ExecError> {
     }
 
     Ok(value)
+}
+
+/// List the tools a local `wasix:mcp` component exports (the `tools/list`
+/// equivalent), resolving and verifying via the same pipeline as [`exec`].
+///
+/// Synchronous (blocking Wasmtime) — callers on an async runtime must wrap this
+/// in `spawn_blocking`.
+pub fn list_tools(component: &str, cfg: &ExecConfig) -> Result<Vec<ToolDef>, ExecError> {
+    let resolved = resolve::resolve(component, &cfg.store)
+        .map_err(|err| ExecError::resolve(component, err))?;
+    let verified = verify::verify(component, resolved, &cfg.security)
+        .map_err(|err| ExecError::verification(component, err))?;
+
+    let runner = runner::DefaultRunner::new(&cfg.runtime)
+        .map_err(|err| ExecError::runner(component, err))?;
+
+    let tools = runner
+        .list_tools_router(
+            &verified,
+            runner::ExecutionContext {
+                runtime: &cfg.runtime,
+                http_enabled: cfg.http_enabled,
+                secrets_store: cfg.secrets_store.clone(),
+            },
+        )
+        .map_err(|err| ExecError::runner(component, err))?
+        .unwrap_or_default();
+
+    Ok(tools.into_iter().map(tool_def_from_router).collect())
+}
+
+/// Parse a WIT `json` payload (which is just a string) into a [`Value`].
+///
+/// A payload that is not valid JSON is passed through verbatim as
+/// [`Value::String`] rather than being discarded or replaced with a
+/// placeholder, so the caller can still see exactly what the tool declared.
+/// Mirrors `parse_json_string` in the sibling `greentic-mcp-adapter` crate,
+/// keeping the local-wasm and HTTP paths in agreement.
+fn parse_json_payload(raw: &str) -> Value {
+    serde_json::from_str(raw).unwrap_or_else(|_| Value::String(raw.to_string()))
+}
+
+/// Map one `wasix:mcp/router` tool record onto a [`ToolDef`].
+///
+/// `output-schema` is `option<json>` in the WIT, and that optionality is
+/// carried through unchanged: an undeclared schema stays `None` instead of
+/// collapsing into an empty object.
+fn tool_def_from_router(t: router::Tool) -> ToolDef {
+    ToolDef {
+        name: t.name,
+        description: t.description,
+        // Pre-existing behaviour, deliberately left alone: a malformed *input*
+        // schema still degrades to `{}`. Changing that is a separate call.
+        input_schema: serde_json::from_str(&t.input_schema)
+            .unwrap_or_else(|_| serde_json::json!({})),
+        output_schema: t.output_schema.as_deref().map(parse_json_payload),
+    }
 }
 
 #[cfg(test)]
@@ -190,5 +267,89 @@ mod tests {
             result.get("component_digest").and_then(Value::as_str),
             Some(digest.as_str())
         );
+    }
+
+    /// Build a router tool record with the given `output-schema` declaration.
+    fn router_tool(output_schema: Option<&str>) -> router::Tool {
+        router::Tool {
+            name: "quote".into(),
+            title: None,
+            description: "quote a policy".into(),
+            input_schema: r#"{"type":"object"}"#.into(),
+            output_schema: output_schema.map(str::to_string),
+            annotations: None,
+            meta: None,
+        }
+    }
+
+    #[test]
+    fn list_tools_mapping_carries_a_declared_output_schema() {
+        let def = tool_def_from_router(router_tool(Some(
+            r#"{"type":"object","properties":{"annual_premium":{"type":"number"}}}"#,
+        )));
+
+        // The whole point of the change: a caller can now discover that this
+        // tool returns an `annual_premium` field.
+        assert_eq!(
+            def.output_schema
+                .as_ref()
+                .and_then(|s| s.get("properties"))
+                .and_then(|p| p.get("annual_premium"))
+                .and_then(|f| f.get("type"))
+                .and_then(Value::as_str),
+            Some("number"),
+            "declared output schema reached the ToolDef: {:?}",
+            def.output_schema
+        );
+    }
+
+    #[test]
+    fn an_undeclared_output_schema_stays_absent() {
+        let def = tool_def_from_router(router_tool(None));
+        assert!(
+            def.output_schema.is_none(),
+            "a tool declaring no output schema must stay None, got {:?}",
+            def.output_schema
+        );
+    }
+
+    #[test]
+    fn undeclared_and_declared_empty_output_schemas_are_distinguishable() {
+        let undeclared = tool_def_from_router(router_tool(None)).output_schema;
+        let declared_empty = tool_def_from_router(router_tool(Some("{}"))).output_schema;
+
+        assert_eq!(undeclared, None);
+        assert_eq!(declared_empty, Some(json!({})));
+        assert_ne!(
+            undeclared, declared_empty,
+            "\"declares nothing\" and \"declares an empty schema\" must not collapse \
+             into the same answer"
+        );
+    }
+
+    #[test]
+    fn a_malformed_output_schema_is_passed_through_not_normalised() {
+        let def = tool_def_from_router(router_tool(Some("not json at all")));
+
+        // Not silently dropped to None (which would read as "declares
+        // nothing") and not normalised to {} — the consumer sees the raw
+        // declaration and can warn about it.
+        assert_eq!(
+            def.output_schema,
+            Some(Value::String("not json at all".into())),
+            "malformed declaration passed through verbatim"
+        );
+    }
+
+    #[test]
+    fn a_declared_output_schema_does_not_disturb_the_input_schema() {
+        let def = tool_def_from_router(router_tool(Some(r#"{"type":"object"}"#)));
+        assert_eq!(
+            def.input_schema,
+            json!({"type": "object"}),
+            "input schema mapping is unchanged"
+        );
+        assert_eq!(def.name, "quote");
+        assert_eq!(def.description, "quote a policy");
     }
 }

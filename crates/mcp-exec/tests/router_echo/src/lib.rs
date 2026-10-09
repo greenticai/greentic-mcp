@@ -50,20 +50,37 @@ impl Guest for Router {
     }
 
     fn list_tools() -> Vec<Tool> {
-        vec![Tool {
-            name: "echo".into(),
-            title: Some("Echo".into()),
-            description: "echo args".into(),
-            input_schema: r#"{"type":"object"}"#.into(),
-            output_schema: None,
-            annotations: Some(ToolAnnotations {
-                read_only: Some(true),
-                destructive: Some(false),
-                streaming: Some(false),
-                experimental: None,
-            }),
-            meta: None,
-        }]
+        vec![
+            // Declares no output schema — pins that the absent case survives
+            // the round trip as absent.
+            Tool {
+                name: "echo".into(),
+                title: Some("Echo".into()),
+                description: "echo args".into(),
+                input_schema: r#"{"type":"object"}"#.into(),
+                output_schema: None,
+                annotations: Some(ToolAnnotations {
+                    read_only: Some(true),
+                    destructive: Some(false),
+                    streaming: Some(false),
+                    experimental: None,
+                }),
+                meta: None,
+            },
+            // Declares an output schema — pins that a tool's real field names
+            // survive the WIT boundary and reach the host's `ToolDef`.
+            Tool {
+                name: "quote".into(),
+                title: Some("Quote".into()),
+                description: "quote a policy".into(),
+                input_schema: r#"{"type":"object"}"#.into(),
+                output_schema: Some(
+                    r#"{"type":"object","properties":{"annual_premium":{"type":"number"}}}"#.into(),
+                ),
+                annotations: None,
+                meta: None,
+            },
+        ]
     }
 
     fn call_tool(tool_name: String, arguments: String) -> Result<Response, ToolError> {
