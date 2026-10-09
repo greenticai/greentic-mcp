@@ -27,7 +27,7 @@ greentic-interfaces-guest.workspace = true
 # Export-free OAuth card logic (decision + Adaptive Card render). Path dep on a
 # sibling checkout for now; to be published before merge.
 oauth-card-core = "0.1.5"
-greentic-telemetry = { version = ">=1.2.0-dev, <1.3.0-0", default-features = false, optional = true }
+greentic-telemetry = { version = ">=1.2.0-0, <1.3.0-0", default-features = false, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_cbor = "0.11"
 serde_json.workspace = true
