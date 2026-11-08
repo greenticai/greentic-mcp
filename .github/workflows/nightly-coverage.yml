@@ -58,8 +58,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cargo binstall --no-confirm --disable-strategies compile \
-            cargo-llvm-cov cargo-nextest greentic-dev
+          # Retry: GitHub release downloads intermittently time out / return 504
+          # (run 42466848820 failed before any test ran). Retry up to 3 times
+          # with 20s then 40s backoff; fail with the last exit code.
+          attempt=1
+          until cargo binstall --no-confirm --disable-strategies compile \
+            cargo-llvm-cov cargo-nextest greentic-dev; do
+            rc=$?
+            if [ "$attempt" -ge 3 ]; then
+              echo "cargo binstall failed after $attempt attempts" >&2
+              exit "$rc"
+            fi
+            sleep $((attempt * 20))
+            attempt=$((attempt + 1))
+          done
           command -v cargo-llvm-cov
           command -v cargo-nextest
           command -v greentic-dev
